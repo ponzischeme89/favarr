@@ -1,0 +1,92 @@
+# Git
+.git/
+.gitignore
+
+# Dependencies (will be installed in container)
+node_modules/
+.pnpm-store/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Build outputs (will be built in container)
+dist/
+build/
+*.egg-info/
+
+# Databases (should not be in image)
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment files (use Docker secrets or env vars instead)
+.env
+.env.local
+.env.*.local
+# Keep example for reference
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude and AI assistants
+.claude/
+.claude_*
+claude.json
+CLAUDE.md
+.aider*
+.cursor/
+
+# Test and coverage
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+.cache/
+tmp/
+temp/
+
+# Documentation (not needed in container)
+*.md
+!README.md
+docs/
+
+# Docker files (prevent recursive issues)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
