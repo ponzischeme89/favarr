@@ -1,7 +1,7 @@
 # Favarr
 
 <div align="center">
-  <img src="docs/images/logo v6.png" alt="Favarr logo" width="420">
+  <img src="docs/images/favarr_logo_v7.png" alt="Favarr logo">
   <p><em>Multi‑server favourites concierge for Emby, Jellyfin, Plex and Audiobookshelf.</em></p>
 </div>
 
