@@ -79,6 +79,12 @@ services:
 - Unified Search searches every integration and can warm its cache for faster suggestions.
 - Logs tab shows the tail of `server/logs/app.log` for quick debugging.
 
+## Limitations
+- Audiobookshelf collections are global, not user-scoped, so “per-user favourites” are simulated by naming conventions and best-effort filtering; collisions are possible on shared servers.
+- ABS collection APIs lack atomic add/remove; updates replace the whole item list, so concurrent edits can race. Favarr mitigates but can’t fully prevent this.
+- ABS metadata is inconsistent across versions; fallback to tag-based favourites is used when collections break, which means favourites may appear as tags instead of lists.
+- No offline mode—server APIs must be reachable to read or change favourites.
+
 ## Production notes
 - `frontend/npm run build` outputs static assets to `frontend/dist`. Serve them with any web server and reverse‑proxy `/api` to the Flask app on port 5000.
 - Flask stores data in `server/favarr.db` (SQLite) alongside log files in `server/logs/`.
