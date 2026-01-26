@@ -5,7 +5,9 @@
   <p><em>Multi‑server favourites concierge for Emby, Jellyfin, Plex and Audiobookshelf.</em></p>
 </div>
 
-Add or tidy favourites for any user without jumping between apps or asking them to log in.
+Favarr is a tiny multi-server favourite-fixer that lets you edit anyone’s favourites across Emby/Jellyfin/Plex/Audiobookshelf from one place. No juggling apps, no remote-controlling your dad’s TV, no sighing dramatically.
+
+Use it to clean up messy libraries, curate playlists for the olds, or fix that one user who somehow hearts every item they scroll past.
 
 ## Highlights
 - Connect multiple servers and store credentials locally (SQLite).
