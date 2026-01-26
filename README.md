@@ -1,7 +1,7 @@
 # Favarr
 
 <div align="center">
-  <img src="docs/images/favarr_logo_v7.png" alt="Favarr logo">
+  <img src="docs/images/favarr_logo_v7.png" alt="Favarr logo" height="350">
   <p><em>Multi-server favourites wrangler for Emby, Jellyfin, Plex, and Audiobookshelf — because Dad still can’t find the star button.</em></p>
 </div>
 
