@@ -89,8 +89,8 @@ services:
 - ABS metadata is inconsistent across versions; fallback to tag-based favourites is used when collections break, which means favourites may appear as tags instead of lists.
 
 ## Roadmap
-- Optional auth for the web UI.
-- Docker image + compose example.
+- Auth
+- API - so you can see stats inside Homepage, other external services
 - Export/import server integrations.
 
 ## Support

@@ -485,6 +485,111 @@ def get_logs():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    """Get statistics across all servers."""
+    try:
+        servers = Server.query.filter_by(enabled=True).all()
+        stats = {
+            'servers': {
+                'total': len(servers),
+                'by_type': {}
+            },
+            'users': {
+                'total': 0,
+                'by_server': []
+            },
+            'favorites': {
+                'total': 0,
+                'by_server': [],
+                'by_type': {}
+            }
+        }
+
+        # Count servers by type
+        for server in servers:
+            stype = server.server_type
+            stats['servers']['by_type'][stype] = stats['servers']['by_type'].get(stype, 0) + 1
+
+        # Gather user and favorites stats per server
+        for server in servers:
+            server_stats = {
+                'id': server.id,
+                'name': server.name,
+                'server_type': server.server_type,
+                'users': 0,
+                'favorites': 0
+            }
+
+            try:
+                # Get users
+                if server.server_type == 'plex':
+                    info = server_request(server, '/accounts')
+                    accounts = info.get('MediaContainer', {}).get('Account', [])
+                    users = [{'Id': str(a.get('id')), 'Name': a.get('name', 'Unknown')} for a in accounts]
+                    if not users:
+                        users = [{'Id': '1', 'Name': 'Owner'}]
+                elif server.server_type == 'audiobookshelf':
+                    users = normalize_abs_users(server_request(server, '/api/users'))
+                    users = [{'Id': u.get('id'), 'Name': u.get('username', 'Unknown')} for u in users]
+                else:
+                    users = server_request(server, '/Users')
+                    users = [{'Id': u.get('Id'), 'Name': u.get('Name', 'Unknown')} for u in users]
+
+                server_stats['users'] = len(users)
+                stats['users']['total'] += len(users)
+
+                # Get favorites count for first user (representative sample)
+                if users:
+                    user = users[0]
+                    user_id = user.get('Id')
+                    try:
+                        if server.server_type == 'plex':
+                            result = server_request(server, '/library/all', params={'userRating>>': '7'})
+                            metadata = result.get('MediaContainer', {}).get('Metadata', [])
+                            fav_count = len(metadata)
+                        elif server.server_type == 'audiobookshelf':
+                            favorite = abs_get_or_create_favorites_collection(server, user_id, create=False)
+                            if favorite:
+                                item_ids, _ = abs_collection_item_ids(favorite)
+                                fav_count = len(item_ids)
+                            else:
+                                fav_count = 0
+                        else:
+                            params = {'Filters': 'IsFavorite', 'Recursive': 'true'}
+                            favorites = server_request(server, f'/Users/{user_id}/Items', params=params)
+                            items = favorites.get('Items', [])
+                            fav_count = len(items)
+
+                            # Count by type
+                            for item in items:
+                                item_type = item.get('Type', 'Other')
+                                stats['favorites']['by_type'][item_type] = stats['favorites']['by_type'].get(item_type, 0) + 1
+
+                        server_stats['favorites'] = fav_count
+                        stats['favorites']['total'] += fav_count
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                server_stats['error'] = str(e)
+
+            stats['users']['by_server'].append({
+                'id': server.id,
+                'name': server.name,
+                'count': server_stats['users']
+            })
+            stats['favorites']['by_server'].append({
+                'id': server.id,
+                'name': server.name,
+                'count': server_stats['favorites']
+            })
+
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # ============ Server Management ============
 
 @app.route('/api/servers', methods=['GET'])
