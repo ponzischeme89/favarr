@@ -74,3 +74,7 @@ services:
 - Optional auth for the web UI.
 - Docker image + compose example.
 - Export/import server integrations.
+
+## Support
+- Give our project a star! This really helps
+- Check out my other projects (Sublogue, Shelfarr)
