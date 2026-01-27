@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import { api } from '../api.js';
   import MediaCard from './MediaCard.svelte';
   import { getServerType } from '../serverIcons.js';
@@ -7,6 +7,7 @@
   export let servers = [];
   export let primaryUser = null;
   export let query = '';
+  export let users = [];
 
   let loading = false;
   let error = null;
@@ -14,6 +15,11 @@
   let usersCache = {};
   let searchStartTime = 0;
   let searchDuration = 0;
+  let pickerFor = null;
+  let toast = null;
+  let toastTimer = null;
+
+  const dispatch = createEventDispatcher();
 
   const normalize = (s) => (s || '').toString().toLowerCase().trim();
 
@@ -101,19 +107,20 @@
 
     const tasks = servers.map(async (server) => {
       try {
-        const users = await loadUsers(server);
+      const users = await loadUsers(server);
         const matchedUser = primaryUser ? bestUserMatch(primaryUser.Name, users) : null;
-        const res = await api.getItems(server.id, { search: term, limit: 20 });
-        const items = res.Items || [];
-        return items.map((item) => ({
-          serverId: server.id,
-          serverLabel: server.server_type,
-          user: matchedUser,
-          item
-        }));
-      } catch (e) {
-        return [];
-      }
+      const res = await api.getItems(server.id, { search: term, limit: 20 });
+      const items = res.Items || [];
+      return items.map((item) => ({
+        serverId: server.id,
+        serverLabel: server.server_type,
+        user: matchedUser,
+        users,
+        item
+      }));
+    } catch (e) {
+      return [];
+    }
     });
 
     try {
@@ -130,6 +137,32 @@
   $: searchAll();
 
   $: groupedResults = groupResultsByServer(results);
+
+  function handleUserSelected(serverId, user) {
+    const prevUser = results.find((r) => r.serverId === serverId)?.user;
+    results = results.map((r) =>
+      r.serverId === serverId ? { ...r, user } : r
+    );
+    dispatch('userSelected', { serverId, user });
+    if (prevUser?.Id !== user?.Id) {
+      showToast(`Saving to ${user?.Name || 'user'} for this server`);
+    }
+  }
+
+  function showToast(message) {
+    toast = message;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (toast = null), 2200);
+  }
+
+  function handleFavoriteChanged(event) {
+    const { isFavorite, user, item } = event.detail || {};
+    showToast(
+      isFavorite
+        ? `Added "${item?.Name || 'item'}" to ${user?.Name || 'user'}`
+        : `Removed "${item?.Name || 'item'}" for ${user?.Name || 'user'}`
+    );
+  }
 </script>
 
 <div class="search-container">
@@ -195,7 +228,7 @@
           <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
       </div>
-      <h3>Unified Search</h3>
+      <h3>Search</h3>
       <p>Search across all your connected integrations at once. Enter a search term above to get started.</p>
       <div class="server-badges">
         {#each servers as server}
@@ -236,12 +269,20 @@
               serverId={result.serverId}
               item={result.item}
               user={result.user}
+              users={result.users || users}
               serverLabel={result.serverLabel}
+              onUserPick={() => pickerFor = result.item.Id}
+              on:userSelected={(e) => handleUserSelected(result.serverId, e.detail.user)}
+              on:favoriteChanged={handleFavoriteChanged}
             />
           {/each}
         </div>
       </div>
     {/each}
+  {/if}
+
+  {#if toast}
+    <div class="toast">{toast}</div>
   {/if}
 </div>
 
@@ -316,6 +357,26 @@
     border: 1px solid var(--border);
     border-radius: 16px;
     padding: 20px;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 12px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+    color: var(--text-primary);
+    animation: slideIn 0.2s ease;
+    z-index: 1100;
+  }
+
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .group-header {

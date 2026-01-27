@@ -1,21 +1,20 @@
 <script>
   import { api } from './api.js';
   import ServerManager from './components/ServerManager.svelte';
-  import Library from './components/Library.svelte';
-  import MediaGrid from './components/MediaGrid.svelte';
   import FavoritesManager from './components/FavoritesManager.svelte';
   import Settings from './components/Settings.svelte';
   import UnifiedSearch from './components/UnifiedSearch.svelte';
   import { getServerType, getServerGradient, usesNativeColor } from './serverIcons';
 
-  const appVersion = 'v1.0.3';
+  const appVersion = 'v1.0.5';
+  let logoShine = true;
 
   let servers = [];
   let selectedServer = null;
-  let currentView = 'library';
+  let currentView = 'favorites';
   let loading = true;
   let error = null;
-  let previousView = 'library';
+  let previousView = 'favorites';
   let globalSearchInput = '';
   let globalSearchTerm = '';
   let searchSuggestions = [];
@@ -24,6 +23,7 @@
   let warmCache = [];
   let suggestionDebounce;
   let showSuggestions = false;
+  let randomSuggestions = [];
 
   // Server management
   let showAddServer = false;
@@ -33,11 +33,8 @@
   let users = [];
   let selectedUser = null;
   let userSearch = '';
-  let showUserDropdown = false;
-
-  $: filteredUsers = users.filter(u =>
-    u.Name?.toLowerCase().includes(userSearch.toLowerCase())
-  );
+  let usersLoading = false;
+  let showUserPicker = false;
 
   async function loadServers() {
     loading = true;
@@ -60,11 +57,12 @@
     selectedServer = server;
     selectedUser = null;
     users = [];
+    usersLoading = true;
     userSearch = '';
     globalSearchInput = '';
     globalSearchTerm = '';
     if (currentView === 'search') {
-      currentView = 'library';
+      currentView = 'favorites';
     }
 
     try {
@@ -74,6 +72,8 @@
       }
     } catch (e) {
       console.error('Failed to load users:', e);
+    } finally {
+      usersLoading = false;
     }
   }
 
@@ -97,8 +97,8 @@
         selectedServer = null;
         users = [];
         selectedUser = null;
-        currentView = 'library';
-        previousView = 'library';
+        currentView = 'favorites';
+        previousView = 'favorites';
         globalSearchInput = '';
         globalSearchTerm = '';
       }
@@ -109,22 +109,25 @@
   }
 
   function selectUser(user) {
+    // Switch active user without navigation, refresh dependent UI
     selectedUser = user;
     userSearch = '';
     showUserDropdown = false;
+    showUserPicker = false;
   }
 
-  function submitGlobalSearch() {
+  function submitGlobalSearch(term) {
     if (!selectedServer && servers.length === 0) return;
-    const term = globalSearchInput.trim();
-    if (!term) {
+    const value = term !== undefined ? term : globalSearchInput;
+    const trimmed = value.trim();
+    if (!trimmed) {
       clearGlobalSearch();
       return;
     }
     if (currentView !== 'search') {
       previousView = currentView;
     }
-    globalSearchTerm = term;
+    globalSearchTerm = trimmed;
     currentView = 'search';
   }
 
@@ -132,7 +135,7 @@
     globalSearchInput = '';
     globalSearchTerm = '';
     if (currentView === 'search') {
-      currentView = previousView || 'library';
+      currentView = previousView || 'favorites';
     }
     searchSuggestions = [];
     showSuggestions = false;
@@ -162,6 +165,41 @@
   function cacheSuggestions(term, suggestions) {
     suggestionCache[term] = suggestions;
     searchSuggestions = suggestions;
+  }
+
+  function pickRandomSuggestions(count = 5) {
+    if (!warmCache.length) return;
+    const buckets = {
+      movie: [],
+      series: [],
+      audiobook: [],
+      other: []
+    };
+    warmCache.forEach(entry => {
+      const t = (entry.item?.Type || '').toLowerCase();
+      if (t === 'movie' || t === 'film') buckets.movie.push(entry);
+      else if (t === 'series' || t === 'tv series' || t === 'show') buckets.series.push(entry);
+      else if (t === 'audiobook' || t === 'book') buckets.audiobook.push(entry);
+      else buckets.other.push(entry);
+    });
+    const pool = [];
+    const order = ['movie', 'series', 'audiobook', 'other'];
+    while (pool.length < count) {
+      let added = false;
+      for (const key of order) {
+        const bucket = buckets[key];
+        if (bucket.length) {
+          const pickIdx = Math.floor(Math.random() * bucket.length);
+          pool.push(bucket.splice(pickIdx, 1)[0]);
+          added = true;
+          if (pool.length === count) break;
+        }
+      }
+      if (!added) break; // all buckets empty
+    }
+    randomSuggestions = pool;
+    searchSuggestions = randomSuggestions;
+    showSuggestions = true;
   }
 
   async function warmSearchCache() {
@@ -237,7 +275,30 @@
     if (suggestionDebounce) {
       clearTimeout(suggestionDebounce);
     }
-    suggestionDebounce = setTimeout(() => fetchSuggestions(globalSearchInput), 250);
+    const term = globalSearchInput.trim();
+    if (term.length < 2) {
+      searchSuggestions = [];
+      return;
+    }
+    suggestionDebounce = setTimeout(() => fetchSuggestions(term), 200);
+  }
+
+  function handleSearchKey(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      submitGlobalSearch(globalSearchInput);
+      showSuggestions = false;
+    }
+  }
+
+  function handleSearchFocus() {
+    showSuggestions = true;
+    if (!globalSearchInput.trim()) {
+      if (!warmCache.length) {
+        handleWarmSearchCache();
+      }
+      pickRandomSuggestions(5);
+    }
   }
 
   function pickSuggestion(suggestion) {
@@ -258,8 +319,14 @@
   <aside class="sidebar">
     <div class="sidebar-scroll">
       <div class="sidebar-header">
-        <h1 class="text-gradient font-bold text-lg">Favarr</h1> <br>
-     
+        <h1
+          class="logo-wordmark"
+          class:shining={logoShine}
+          on:animationend={() => (logoShine = false)}
+        >
+          Favarr
+        </h1>
+        <div class="sidebar-divider"></div>
         <div class="section-header">
           <span class="text-xs font-medium text-[--text-secondary] uppercase tracking-wide">Servers</span>
           <button class="add-btn" on:click={() => showAddServer = true} title="Add Server">+</button>
@@ -288,7 +355,10 @@
                   <img src={getServerIconUrl(server.server_type)} alt={server.server_type} class="icon-img" />
                 </span>
                 <div class="server-details">
-                  <span class="server-name">{server.server_type}</span>
+                  <div class="server-name">{getServerType(server.server_type).name}</div>
+                  {#if server.name && server.name !== server.server_type}
+                    <div class="server-nickname">{server.name}</div>
+                  {/if}
                 </div>
                 <div class="server-actions">
                   <button class="action-btn" on:click|stopPropagation={() => editingServer = server} title="Edit">
@@ -311,30 +381,6 @@
         <nav class="nav-menu">
           <button
             class="nav-item"
-            class:active={currentView === 'library'}
-            on:click={() => goToView('library')}
-            disabled={!selectedServer}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-            </svg>
-            Library
-          </button>
-          <button
-            class="nav-item"
-            class:active={currentView === 'recent'}
-            on:click={() => goToView('recent')}
-            disabled={!selectedServer}
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
-            Recent
-          </button>
-          <button
-            class="nav-item"
             class:active={currentView === 'favorites'}
             on:click={() => goToView('favorites')}
             disabled={!selectedServer}
@@ -342,7 +388,7 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
             </svg>
-            Favorites
+            Favourites
           </button>
           <button
             class="nav-item"
@@ -402,22 +448,28 @@
           {/if}
         </div>
 
-        <form class="global-search" on:submit|preventDefault={submitGlobalSearch}>
-          <div class="search-input">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <div class="global-search">
+          <div class="search-input minimal">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="11" cy="11" r="8"/>
               <line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <input
               type="text"
               class="input"
-              placeholder="Unified search across all integrations"
+              placeholder="Search everything..."
               bind:value={globalSearchInput}
               on:input={handleSearchInput}
-              on:focus={() => showSuggestions = true}
+              on:keydown={handleSearchKey}
+              on:focus={handleSearchFocus}
               on:blur={() => setTimeout(() => showSuggestions = false, 120)}
               disabled={servers.length === 0}
             />
+            {#if globalSearchInput}
+              <button class="clear-btn" type="button" on:click={clearGlobalSearch} aria-label="Clear search">
+                ×
+              </button>
+            {/if}
             {#if showSuggestions && (searchSuggestions.length > 0 || suggestionsLoading || globalSearchInput.trim().length >= 2)}
               <div class="suggestions">
                 {#if suggestionsLoading}
@@ -433,61 +485,33 @@
                   {#each searchSuggestions as suggestion (suggestion.item?.Id + suggestion.serverId)}
                     <button class="suggestion-row" type="button" on:click={() => pickSuggestion(suggestion)}>
                       <div class="suggestion-main">
-                        <div class="title">{suggestion.item?.Name || 'Untitled'}</div>
-                        {#if suggestion.item?.Type}
-                          <span class="badge badge-ghost">{suggestion.item.Type}</span>
+                        {#if suggestion.item?.PrimaryImageTag || suggestion.item?.ImageTags?.Primary}
+                          <img class="suggestion-thumb" src={api.getImageUrl(suggestion.serverId, suggestion.item?.Id, 'Primary', 80, suggestion.item?.ImageTags?.Primary)} alt={suggestion.item?.Name} />
+                        {:else}
+                          <div class="suggestion-thumb placeholder">?</div>
                         {/if}
+                        <div class="suggestion-text">
+                          <div class="title">{suggestion.item?.Name || 'Untitled'}</div>
+                          {#if suggestion.item?.Type}
+                            <span class="badge badge-ghost">{suggestion.item.Type}</span>
+                          {/if}
+                        </div>
                       </div>
-                      <span class="badge badge-soft">{suggestion.serverLabel}</span>
+                      <span class="badge badge-soft icon-badge">
+                        {#if getServerIconUrl(suggestion.serverLabel)}
+                          <img src={getServerIconUrl(suggestion.serverLabel)} alt={suggestion.serverLabel} class={usesNativeColor(suggestion.serverLabel) ? 'native-color' : ''} />
+                        {:else}
+                          {suggestion.serverLabel}
+                        {/if}
+                      </span>
                     </button>
                   {/each}
                 {/if}
               </div>
             {/if}
           </div>
-          {#if globalSearchTerm}
-            <button type="button" class="btn btn-ghost btn-sm" on:click={clearGlobalSearch}>
-              Clear
-            </button>
-          {/if}
-          <button type="submit" class="btn btn-primary btn-sm" disabled={!selectedServer}>
-            Search
-          </button>
-        </form>
+        </div>
 
-        {#if selectedServer && users.length > 0}
-          <div class="user-selector header-user">
-            <button class="user-btn" on:click={() => showUserDropdown = !showUserDropdown}>
-              <span class="user-avatar">{selectedUser?.Name?.charAt(0) || '?'}</span>
-              <span class="user-name">{selectedUser?.Name || 'Select user'}</span>
-              <svg class="chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
-            {#if showUserDropdown}
-              <div class="user-dropdown">
-                <input
-                  type="text"
-                  class="user-search"
-                  placeholder="Search users..."
-                  bind:value={userSearch}
-                />
-                <div class="user-list">
-                  {#each filteredUsers as user}
-                    <button
-                      class="user-option"
-                      class:active={selectedUser?.Id === user.Id}
-                      on:click={() => selectUser(user)}
-                    >
-                      <span class="user-avatar small">{user.Name?.charAt(0) || '?'}</span>
-                      {user.Name}
-                    </button>
-                  {/each}
-                </div>
-              </div>
-            {/if}
-          </div>
-        {/if}
       </div>
     </header>
 
@@ -520,23 +544,27 @@
             servers={servers}
             primaryUser={selectedUser}
             query={globalSearchTerm}
+            users={users}
           />
-        {:else if currentView === 'library'}
-          <Library serverId={selectedServer.id} serverType={selectedServer.server_type} user={selectedUser} />
-        {:else if currentView === 'recent'}
-          <MediaGrid serverId={selectedServer.id} serverType={selectedServer.server_type} type="recent" user={selectedUser} />
         {:else if currentView === 'favorites'}
-          <FavoritesManager
-            serverId={selectedServer.id}
-            serverType={selectedServer.server_type}
-            user={selectedUser}
-          />
+          <div class="favorites-stack">
+           
+              <FavoritesManager
+                serverId={selectedServer.id}
+                serverType={selectedServer.server_type}
+                user={selectedUser}
+                users={users}
+                usersLoading={usersLoading}
+                onUserSwitch={selectUser}
+              />
+          </div>
         {:else if currentView === 'settings'}
-          <Settings serverId={selectedServer.id} user={selectedUser} on:warmsearch={handleWarmSearchCache} />
+          <Settings serverId={selectedServer.id} user={selectedUser} on:warmsearch={handleWarmSearchCache} on:updated={loadServers} />
         {/if}
       </div>
     {/if}
   </main>
+
 </div>
 
 <style>
@@ -549,8 +577,8 @@
   }
 
   .sidebar {
-    width: 280px;
-    min-width: 280px;
+    width: 260px;
+    min-width: 260px;
     height: 100vh;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border);
@@ -567,8 +595,16 @@
   }
 
   .sidebar-header {
-    padding: 20px;
+    padding: 22px 20px 12px;
     border-bottom: 1px solid var(--border);
+    line-height: 1.35;
+  }
+
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 14px 0 16px;
+    border-radius: 999px;
   }
 
   .sidebar-section {
@@ -581,6 +617,7 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+    margin-top: 4px;
   }
 
   .add-btn {
@@ -605,14 +642,14 @@
   .server-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 12px;
   }
 
   .server-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 10px;
+    padding: 8px 10px;
     background: transparent;
     border: 1px solid transparent;
     border-radius: 10px;
@@ -664,11 +701,17 @@
 
   .server-name {
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: normal;
+    line-height: 1.25;
+  }
+
+  .server-nickname {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.2;
+    white-space: normal;
   }
 
   .server-type {
@@ -822,14 +865,15 @@
   .nav-menu {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 6px;
+    margin-top: 28px;
   }
 
   .nav-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: 10px;
+    padding: 9px 10px;
     background: transparent;
     border: none;
     border-radius: 10px;
@@ -916,6 +960,28 @@
     width: 100%;
   }
 
+  .user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .user-chip:hover {
+    box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+    border-color: rgba(139, 92, 246, 0.35);
+  }
+
+  .user-chip-name {
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
   .header-brand .server-icon {
     width: 38px;
     height: 38px;
@@ -932,10 +998,9 @@
   }
 
   .global-search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
     width: 100%;
+    max-width: 520px;
+    position: relative;
   }
 
   .search-input {
@@ -943,17 +1008,78 @@
     flex: 1;
   }
 
-  .search-input svg {
+  .search-input.minimal {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 6px 10px 6px 32px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 40px;
+  }
+
+  .search-input svg.icon {
     position: absolute;
     left: 12px;
     top: 50%;
     transform: translateY(-50%);
     color: var(--text-tertiary);
+    width: 16px;
+    height: 16px;
+    pointer-events: none;
   }
 
   .search-input .input {
-    padding-left: 36px;
+    border: none;
+    background: transparent;
+    padding: 0;
+    padding-left: 0;
+    height: 100%;
+    font-size: 14px;
   }
+
+  .search-input .input:focus {
+    outline: none;
+  }
+
+  .clear-btn {
+    border: none;
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 16px;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+
+  .clear-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .logo-wordmark {
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    background: linear-gradient(120deg, #c084fc 0%, #8b5cf6 35%, #c084fc 60%, #f9fafb 100%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    color: transparent;
+    display: inline-block;
+    text-shadow: 0 6px 18px rgba(139, 92, 246, 0.25);
+  }
+
+  .logo-wordmark.shining {
+    animation: logoShine 1.4s ease-out 1 forwards;
+  }
+
+  @keyframes logoShine {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+
+  .inline-user { display: none; }
 
   .suggestions {
     position: absolute;
@@ -1008,7 +1134,30 @@
   .suggestion-main {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
+  }
+
+  .suggestion-thumb {
+    width: 36px;
+    height: 52px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: var(--bg-hover);
+    flex-shrink: 0;
+  }
+
+  .suggestion-thumb.placeholder {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    font-weight: 600;
+  }
+
+  .suggestion-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .badge-soft {
@@ -1019,6 +1168,15 @@
     border-radius: 999px;
     font-size: 11px;
     text-transform: capitalize;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .badge-soft.icon-badge img {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
   }
 
   @keyframes pulse {
@@ -1031,6 +1189,32 @@
     flex: 1;
     padding: 24px;
     overflow-y: auto;
+  }
+
+  .favorites-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .stack-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+  }
+
+  .stack-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .stack-subtitle {
+    color: var(--text-secondary);
+    margin: 2px 0 0;
+    font-size: 0.95rem;
   }
 
   .empty-state {

@@ -816,12 +816,13 @@ def get_items(server_id):
 
     try:
         if server.server_type == 'plex':
+            disallowed_types = {'episode', 'program', 'person'}
             if search:
-                # Include all common types so episodes are returned
+                # Limit to movies and shows only
                 result = server_request(
                     server,
                     '/search',
-                    params={'query': search, 'type': '1,2,4,8,9,10'}  # movie, show, episode, artist, album, track
+                    params={'query': search, 'type': '1,2'}  # 1=movie, 2=show
                 )
                 metadata = result.get('MediaContainer', {}).get('Metadata', [])
             elif parent_id:
@@ -830,6 +831,8 @@ def get_items(server_id):
             else:
                 result = server_request(server, '/library/recentlyAdded')
                 metadata = result.get('MediaContainer', {}).get('Metadata', [])
+
+            filtered = [m for m in metadata if (m.get('type') or '').lower() not in disallowed_types]
 
             items = [{
                 'Id': str(item.get('ratingKey')),
@@ -841,7 +844,7 @@ def get_items(server_id):
                 'UserData': {
                     'Played': plex_item_played(item)
                 }
-            } for item in metadata[:limit]]
+            } for item in filtered[:limit]]
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
         elif server.server_type == 'audiobookshelf':
@@ -886,9 +889,10 @@ def get_items(server_id):
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
         else:  # emby or jellyfin
+            include_types = request.args.get('types', 'Movie,Series,AudioBook')
             params = {
                 'Recursive': request.args.get('recursive', 'true'),
-                'IncludeItemTypes': request.args.get('types', 'Audio,Program,Movie,Series,Episode'),
+                'IncludeItemTypes': include_types,
                 'StartIndex': request.args.get('start', 0),
                 'Limit': limit,
                 'SortBy': request.args.get('sort_by', 'SortName'),
@@ -1106,11 +1110,19 @@ def get_recent(server_id):
         return jsonify({'error': 'Server not found'}), 404
 
     limit = int(request.args.get('limit', 20))
+    parent_id = request.args.get('parent_id')
 
     try:
         if server.server_type == 'plex':
-            result = server_request(server, '/library/recentlyAdded',
-                                   params={'X-Plex-Container-Size': limit})
+            if parent_id:
+                result = server_request(
+                    server,
+                    f'/library/sections/{parent_id}/recentlyAdded',
+                    params={'X-Plex-Container-Size': limit}
+                )
+            else:
+                result = server_request(server, '/library/recentlyAdded',
+                                       params={'X-Plex-Container-Size': limit})
             metadata = result.get('MediaContainer', {}).get('Metadata', [])
             items = [{
                 'Id': str(item.get('ratingKey')),
@@ -1126,6 +1138,8 @@ def get_recent(server_id):
 
         elif server.server_type == 'audiobookshelf':
             libs = server_request(server, '/api/libraries').get('libraries', [])
+            if parent_id:
+                libs = [lib for lib in libs if str(lib.get('id')) == str(parent_id)]
             items = []
             for lib in libs:
                 lib_items = server_request(server, f'/api/libraries/{lib["id"]}/items',
@@ -1142,6 +1156,8 @@ def get_recent(server_id):
                 'SortOrder': 'Descending',
                 'Fields': 'Overview,Path,UserData'
             }
+            if parent_id:
+                params['ParentId'] = parent_id
             recent = server_request(server, '/Items', params=params)
             return jsonify(recent)
 

@@ -58,7 +58,11 @@ export const api = {
 
   getItem: (serverId, itemId) => fetchJson(`/servers/${serverId}/items/${itemId}`),
 
-  getRecent: (serverId, limit = 20) => fetchJson(`/servers/${serverId}/recent?limit=${limit}`),
+  getRecent: (serverId, limit = 20, parentId = '') => {
+    const params = new URLSearchParams({ limit });
+    if (parentId) params.append('parent_id', parentId);
+    return fetchJson(`/servers/${serverId}/recent?${params.toString()}`);
+  },
 
   // Favorites
   getFavorites: (serverId, userId) => fetchJson(`/servers/${serverId}/users/${userId}/favorites`),

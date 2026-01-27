@@ -10,6 +10,7 @@
   let selectedLibrary = null;
   let loading = true;
   let error = null;
+  let librarySearch = '';
 
   $: if (serverId) {
     loadLibraries();
@@ -46,21 +47,35 @@
     switch(type?.toLowerCase()) {
       case 'movies':
       case 'movie':
-        return '🎬';
+        return 'M';
       case 'tvshows':
       case 'show':
-        return '📺';
+        return 'TV';
       case 'music':
-        return '🎵';
+        return 'MU';
       case 'photos':
-        return '📷';
+        return 'PH';
       case 'audiobooks':
       case 'podcast':
-        return '🎧';
+        return 'AB';
       default:
-        return '📁';
+        return 'LB';
     }
   }
+
+  function colorFor(name = '') {
+    const palette = [
+      '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
+      '#ef4444', '#3b82f6', '#ec4899', '#14b8a6'
+    ];
+    let sum = 0;
+    for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+    return palette[sum % palette.length];
+  }
+
+  $: filteredLibraries = libraries.filter(lib =>
+    (lib.Name || '').toLowerCase().includes(librarySearch.toLowerCase())
+  );
 </script>
 
 {#if loading}
@@ -82,56 +97,135 @@
   <MediaGrid {serverId} serverType={serverType} type="library" libraryId={selectedLibrary.ItemId} {user} />
 {:else}
   <div class="card">
-    <h2 class="card-title">Libraries</h2>
+    <div class="card-top">
+      <div>
+        <h2 class="card-title !mb-1">Libraries</h2>
+        <p class="muted">Pick a library to browse or search, then add items to favourites.</p>
+      </div>
+      <div class="search-box">
+        <input
+          class="input"
+          type="text"
+          placeholder="Search libraries..."
+          bind:value={librarySearch}
+        />
+      </div>
+    </div>
+
+    {#if filteredLibraries.length === 0}
+      <div class="text-center py-8 text-[--text-secondary]">No libraries found.</div>
+    {:else}
+      <div class="library-grid">
+        {#each filteredLibraries as library}
+          <button class="library-card" on:click={() => selectLibrary(library)}>
+            <div class="library-avatar" style={`background:${colorFor(library.Name)}`}>
+              {getLibraryIcon(library.CollectionType)}
+            </div>
+            <div class="library-info">
+              <div class="library-name">{library.Name}</div>
+              <div class="library-type">{library.CollectionType || 'Library'}</div>
+            </div>
+            <div class="chevron">›</div>
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
-  {#if libraries.length === 0}
-    <div class="card text-center py-8">
-      <p class="text-[--text-secondary]">No libraries found.</p>
-    </div>
-  {:else}
-    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-      {#each libraries as library}
-        <button class="library-card" on:click={() => selectLibrary(library)}>
-          <div class="library-icon">
-            {getLibraryIcon(library.CollectionType)}
-          </div>
-          <div class="library-name">{library.Name}</div>
-        </button>
-      {/each}
-    </div>
-  {/if}
 {/if}
 
 <style>
-  .library-card {
+  .card-top {
     display: flex;
-    flex-direction: column;
     align-items: center;
+    justify-content: space-between;
     gap: 12px;
-    padding: 24px 16px;
+    margin-bottom: 12px;
+  }
+
+  .muted {
+    color: var(--text-secondary);
+    font-size: 13px;
+  }
+
+  .search-box {
+    width: 240px;
+  }
+
+  .library-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 10px;
+  }
+
+  .library-card {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 12px;
+    padding: 14px 12px;
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 12px;
     cursor: pointer;
     transition: all 0.3s;
+    align-items: center;
   }
 
   .library-card:hover {
-    transform: translateY(-4px);
+    transform: translateY(-2px);
     background: var(--bg-hover);
     border-color: rgba(139, 92, 246, 0.3);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   }
 
-  .library-icon {
-    font-size: 2.5rem;
-    line-height: 1;
+  .library-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: 700;
+    font-size: 13px;
+  }
+
+  .library-info {
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
   .library-name {
-    font-size: 14px;
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 600;
     color: var(--text-primary);
-    text-align: center;
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .library-type {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+  }
+
+  .chevron {
+    color: var(--text-tertiary);
+    font-size: 18px;
+  }
+
+  @media (max-width: 640px) {
+    .card-top {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .search-box {
+      width: 100%;
+    }
+    .library-card {
+      grid-template-columns: auto 1fr 14px;
+    }
   }
 </style>

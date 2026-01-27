@@ -2,7 +2,7 @@
   export let serverId = null;
   // user prop kept for API compatibility with parent component
   export let user = null;
-  import { onMount } from 'svelte';
+  import { onMount, createEventDispatcher } from 'svelte';
   import { api } from '../api';
   import { getServerTypesList, getServerType, usesNativeColor } from '../serverIcons';
 
@@ -29,6 +29,7 @@
   let testing = false;
   let saving = false;
   let connectionStatus = {}; // { serverId: 'connected' | 'error' | 'unknown' }
+  const dispatch = createEventDispatcher();
 
   let newIntegration = {
     name: '',
@@ -270,9 +271,11 @@
       if (editingId) {
         await api.updateServer(editingId, payload);
         showToast('Integration updated successfully', 'success');
+        dispatch('updated');
       } else {
         await api.createServer(payload);
         showToast('Integration added successfully', 'success');
+        dispatch('updated');
       }
 
       cancelAdd();
@@ -290,6 +293,7 @@
       await api.deleteServer(integration.id);
       showToast('Integration removed', 'success');
       loadIntegrations();
+      dispatch('updated');
     } catch (err) {
       showToast(err.message || 'Failed to delete integration', 'error');
     }
@@ -504,9 +508,17 @@
         </div>
 
         {#if integrationsLoading}
-          <div class="loading-state">
-            <div class="spinner large"></div>
-            <span>Loading integrations...</span>
+          <div class="integrations-skeleton">
+            {#each Array(3) as _}
+              <div class="skeleton-card">
+                <div class="skeleton icon"></div>
+                <div class="skeleton lines">
+                  <div class="skeleton line w-60"></div>
+                  <div class="skeleton line w-40"></div>
+                </div>
+                <div class="skeleton pill"></div>
+              </div>
+            {/each}
           </div>
         {:else if integrations.length === 0}
           <div class="empty-state">
@@ -990,6 +1002,61 @@
 
   .form-actions .btn {
     flex: 1;
+  }
+
+  /* Integrations Skeleton */
+  .integrations-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .skeleton-card {
+    display: grid;
+    grid-template-columns: 44px 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.12) 37%, rgba(255,255,255,0.04) 63%);
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease infinite;
+    border-radius: 10px;
+  }
+
+  .skeleton.icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .skeleton.lines {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .skeleton.line {
+    height: 10px;
+    border-radius: 6px;
+  }
+
+  .skeleton.line.w-60 { width: 60%; }
+  .skeleton.line.w-40 { width: 40%; }
+
+  .skeleton.pill {
+    width: 84px;
+    height: 22px;
+    border-radius: 999px;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
 
   /* Integrations List */

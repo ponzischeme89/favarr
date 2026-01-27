@@ -1,35 +1,69 @@
 <script>
+  import { createEventDispatcher } from 'svelte';
   import { api } from '../api.js';
   import { getServerIcon as getSharedServerIcon, usesNativeColor } from '../serverIcons.js';
 
   export let serverId = null;
   export let item;
   export let user = null;
+  export let users = []; // All available users for popover
+  export let onUserPick = null; // optional: open inline picker
   export let serverLabel = '';
+  export let serverType = '';
+  export let onOpen = null; // optional: quick preview handler
+  export let onFavorite = null; // optional: immediate favourite handler
+  export let onShowPopover = null; // optional: show quick-add popover
 
-  let isFavorite = item.UserData?.IsFavorite || false;
+  const dispatch = createEventDispatcher();
+
+  let activeUser = user;
+  let isFavorite = item.UserData?.IsFavorite || item.isFavorite || false;
   let toggling = false;
+  let showUserPicker = false;
+  let pendingFavorite = false;
+  let cardEl;
 
-  async function toggleFavorite() {
-    if (!user || !serverId || toggling) return;
+  async function toggleFavorite(evt = null, skipPrompt = false) {
+    // Shift+Click: Quick add via callback
+    if (evt?.shiftKey && onFavorite) {
+      onFavorite(item);
+      return;
+    }
+
+    // Alt/Option+Click: Show popover for advanced options
+    if (evt?.altKey && onShowPopover) {
+      onShowPopover(item, evt);
+      return;
+    }
+
+    if (users?.length > 1 && !skipPrompt && !showUserPicker) {
+      showUserPicker = true;
+      pendingFavorite = true;
+      return;
+    }
+
+    if (!activeUser || !serverId || toggling) return;
 
     toggling = true;
     try {
       if (isFavorite) {
-        await api.removeFavorite(serverId, user.Id, item.Id);
+        await api.removeFavorite(serverId, activeUser.Id, item.Id);
         isFavorite = false;
+        dispatch('favoriteChanged', { item, isFavorite: false });
       } else {
-        if ((serverLabel || '').toLowerCase() === 'audiobookshelf') {
-          await api.addAbsUserFavourite(serverId, user.Name || '', item.Id);
+        if ((serverLabel || '').toLowerCase() === 'audiobookshelf' || serverType === 'audiobookshelf') {
+          await api.addAbsUserFavourite(serverId, activeUser.Name || '', item.Id);
         } else {
-          await api.addFavorite(serverId, user.Id, item.Id, user.Name || '');
+          await api.addFavorite(serverId, activeUser.Id, item.Id, activeUser.Name || '');
         }
         isFavorite = true;
+        dispatch('favoriteChanged', { item, isFavorite: true });
       }
     } catch (e) {
       console.error('Failed to toggle favorite:', e);
     } finally {
       toggling = false;
+      pendingFavorite = false;
     }
   }
 
@@ -62,9 +96,50 @@
   }
 
   $: isNativeColor = usesNativeColor(serverLabel);
+
+  function handleClick(event) {
+    // Shift-click: instant favourite for speed
+    if (event.shiftKey && onFavorite) {
+      onFavorite(item);
+      return;
+    }
+    // Regular click: open quick preview if provided
+    if (onOpen) {
+      onOpen(item);
+    }
+  }
+
+  function requestUserPick(event) {
+    event.stopPropagation();
+    showUserPicker = !showUserPicker;
+    pendingFavorite = false;
+    if (onUserPick) onUserPick(item);
+  }
+
+  function selectActiveUser(u) {
+    activeUser = u;
+    showUserPicker = false;
+    dispatch('userSelected', { user: u, item });
+    if (pendingFavorite) {
+      pendingFavorite = false;
+      toggleFavorite(null, true);
+    }
+  }
+
+  function handleWindowClick(event) {
+    if (showUserPicker && cardEl && !cardEl.contains(event.target)) {
+      showUserPicker = false;
+      pendingFavorite = false;
+    }
+  }
+
+  $: if (user && (!activeUser || activeUser?.Id !== user?.Id)) {
+    activeUser = user;
+  }
 </script>
 
-<div class="media-card">
+<svelte:window on:click={handleWindowClick} />
+<div class="media-card" bind:this={cardEl} on:click|stopPropagation={handleClick}>
   {#if serverLabel}
     <span class="server-tag">
       {#if getServerIconUrl(serverLabel)}
@@ -94,23 +169,35 @@
       {/if}
     </div>
 
-    {#if user}
-      <button
-        class="fav-btn"
-        class:is-favorite={isFavorite}
-        on:click|stopPropagation={toggleFavorite}
-        disabled={toggling}
-        title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
-      >
-        {#if toggling}
-          <span class="spinner"></span>
-        {:else}
-          <svg width="18" height="18" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2">
-            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
-          </svg>
-        {/if}
-      </button>
-    {/if}
+    <div class="actions">
+      {#if activeUser}
+        <button
+          class="fav-btn"
+          class:is-favorite={isFavorite}
+          on:click|stopPropagation={(e) => toggleFavorite(e)}
+          disabled={toggling}
+          title={isFavorite ? 'Remove from favorites' : 'Add to favorites (⇧+Click: Quick add, ⌥+Click: Options)'}
+        >
+          {#if toggling}
+            <span class="spinner"></span>
+          {:else}
+            <svg width="18" height="18" viewBox="0 0 24 24" fill={isFavorite ? 'currentColor' : 'none'} stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          {/if}
+        </button>
+      {/if}
+      {#if users?.length > 1 && showUserPicker}
+        <div class="user-popover" on:click|stopPropagation>
+          {#each users as u (u.Id)}
+            <button class="user-option" class:active={activeUser?.Id === u.Id} on:click={() => selectActiveUser(u)}>
+              <span class="option-avatar">{u.Name?.charAt(0) || '?'}</span>
+              <span class="option-name">{u.Name}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
   </div>
 </div>
 
@@ -209,10 +296,96 @@
     border-radius: 4px;
   }
 
-  .fav-btn {
+  .actions {
     position: absolute;
     top: -36px;
     right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .user-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+    backdrop-filter: blur(6px);
+  }
+
+  .user-chip:hover {
+    background: rgba(0, 0, 0, 0.7);
+  }
+
+  .user-popover {
+    position: absolute;
+    bottom: 110%;
+    right: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+    z-index: 90;
+    min-width: 180px;
+    overflow: hidden;
+    animation: dropdownIn 0.15s ease;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .user-option {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 14px;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+
+  .user-option:hover {
+    background: var(--bg-hover);
+  }
+
+  .user-option.active {
+    background: rgba(139, 92, 246, 0.12);
+  }
+
+  .option-avatar {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--accent), #9b6dfa);
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 700;
+  }
+
+  .option-name {
+    flex: 1;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  @keyframes dropdownIn {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .fav-btn {
     width: 32px;
     height: 32px;
     display: flex;
@@ -255,4 +428,3 @@
     to { transform: rotate(360deg); }
   }
 </style>
-
