@@ -19,9 +19,10 @@ async function fetchJson(url, options = {}) {
 }
 
 export const api = {
-  // Health
+  // Health & Stats
   health: () => fetchJson('/health'),
   getLogs: (limit = 200) => fetchJson(`/logs?limit=${limit}`),
+  getStats: () => fetchJson('/stats'),
 
   // Server Management (CRUD)
   getServers: () => fetchJson('/servers'),
@@ -112,5 +113,12 @@ export const api = {
       url += `&thumb=${encodeURIComponent(thumb)}`;
     }
     return url;
-  }
+  },
+
+  // Stats Collection & Scheduling
+  collectStats: () => fetchJson('/stats/collect', { method: 'POST' }),
+
+  getCollectionStatus: () => fetchJson('/stats/collect/status'),
+
+  getSnapshots: (limit = 30) => fetchJson(`/stats/snapshots?limit=${limit}`)
 };

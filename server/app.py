@@ -80,6 +80,70 @@ class Server(db.Model):
         return data
 
 
+class AppSettings(db.Model):
+    """Model for storing application settings."""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(100), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=True)
+
+    @staticmethod
+    def get(key, default=None):
+        setting = AppSettings.query.filter_by(key=key).first()
+        return setting.value if setting else default
+
+    @staticmethod
+    def set(key, value):
+        setting = AppSettings.query.filter_by(key=key).first()
+        if setting:
+            setting.value = value
+        else:
+            setting = AppSettings(key=key, value=value)
+            db.session.add(setting)
+        db.session.commit()
+        return setting
+
+
+class StatsSnapshot(db.Model):
+    """Model for storing historical statistics snapshots."""
+    id = db.Column(db.Integer, primary_key=True)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    servers_total = db.Column(db.Integer, default=0)
+    servers_by_type = db.Column(db.Text, default='{}')  # JSON string
+    users_total = db.Column(db.Integer, default=0)
+    users_by_server = db.Column(db.Text, default='[]')  # JSON string
+    favorites_total = db.Column(db.Integer, default=0)
+    favorites_by_server = db.Column(db.Text, default='[]')  # JSON string
+    favorites_by_type = db.Column(db.Text, default='{}')  # JSON string
+    collection_status = db.Column(db.String(20), default='completed')  # pending, running, completed, failed
+    collection_progress = db.Column(db.Integer, default=0)  # 0-100
+    collection_message = db.Column(db.Text, default='')
+    duration_seconds = db.Column(db.Float, default=0)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'servers_total': self.servers_total,
+            'servers_by_type': json.loads(self.servers_by_type) if self.servers_by_type else {},
+            'users_total': self.users_total,
+            'users_by_server': json.loads(self.users_by_server) if self.users_by_server else [],
+            'favorites_total': self.favorites_total,
+            'favorites_by_server': json.loads(self.favorites_by_server) if self.favorites_by_server else [],
+            'favorites_by_type': json.loads(self.favorites_by_type) if self.favorites_by_type else {},
+            'collection_status': self.collection_status,
+            'collection_progress': self.collection_progress,
+            'collection_message': self.collection_message,
+            'duration_seconds': self.duration_seconds
+        }
+
+
+# Global state for tracking running collection task
+_stats_collection_task = {
+    'running': False,
+    'snapshot_id': None
+}
+
+
 # Create tables (wrapped to handle race conditions with multiple workers)
 with app.app_context():
     try:
@@ -539,23 +603,29 @@ def get_stats():
                 server_stats['users'] = len(users)
                 stats['users']['total'] += len(users)
 
-                # Get favorites count for first user (representative sample)
-                if users:
-                    user = users[0]
+                # Get favorites count for ALL users on this server
+                server_fav_count = 0
+                for user in users:
                     user_id = user.get('Id')
                     try:
                         if server.server_type == 'plex':
+                            # Plex ratings are per-account, query with user context
                             result = server_request(server, '/library/all', params={'userRating>>': '7'})
                             metadata = result.get('MediaContainer', {}).get('Metadata', [])
                             fav_count = len(metadata)
                         elif server.server_type == 'audiobookshelf':
-                            favorite = abs_get_or_create_favorites_collection(server, user_id, create=False)
-                            if favorite:
-                                item_ids, _ = abs_collection_item_ids(favorite)
-                                fav_count = len(item_ids)
-                            else:
-                                fav_count = 0
+                            # ABS: look for user's named favorites collection
+                            user_name = user.get('Name')
+                            collections = normalize_abs_collections(server_request(server, '/api/collections'))
+                            fav_count = 0
+                            for collection in collections:
+                                name = (collection.get('name') or '').lower()
+                                if user_name and user_name.lower() in name and ('favorite' in name or 'favourite' in name):
+                                    item_ids, _ = abs_collection_item_ids(collection)
+                                    fav_count += len(item_ids)
+                                    break
                         else:
+                            # Emby/Jellyfin: query user's favorites
                             params = {'Filters': 'IsFavorite', 'Recursive': 'true'}
                             favorites = server_request(server, f'/Users/{user_id}/Items', params=params)
                             items = favorites.get('Items', [])
@@ -566,10 +636,12 @@ def get_stats():
                                 item_type = item.get('Type', 'Other')
                                 stats['favorites']['by_type'][item_type] = stats['favorites']['by_type'].get(item_type, 0) + 1
 
-                        server_stats['favorites'] = fav_count
-                        stats['favorites']['total'] += fav_count
+                        server_fav_count += fav_count
                     except Exception:
-                        pass
+                        continue
+
+                server_stats['favorites'] = server_fav_count
+                stats['favorites']['total'] += server_fav_count
 
             except Exception as e:
                 server_stats['error'] = str(e)
@@ -588,6 +660,212 @@ def get_stats():
         return jsonify(stats)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def collect_stats_task(snapshot_id):
+    """Background task to collect statistics and update snapshot."""
+    import time
+    start_time = time.time()
+
+    with app.app_context():
+        snapshot = StatsSnapshot.query.get(snapshot_id)
+        if not snapshot:
+            return
+
+        try:
+            snapshot.collection_status = 'running'
+            snapshot.collection_progress = 0
+            snapshot.collection_message = 'Starting collection...'
+            db.session.commit()
+
+            servers = Server.query.filter_by(enabled=True).all()
+            total_steps = len(servers) + 1  # +1 for final processing
+
+            stats = {
+                'servers': {'total': len(servers), 'by_type': {}},
+                'users': {'total': 0, 'by_server': []},
+                'favorites': {'total': 0, 'by_server': [], 'by_type': {}}
+            }
+
+            # Count servers by type
+            for server in servers:
+                stype = server.server_type
+                stats['servers']['by_type'][stype] = stats['servers']['by_type'].get(stype, 0) + 1
+
+            # Process each server
+            for idx, server in enumerate(servers):
+                snapshot.collection_message = f'Processing {server.name}...'
+                snapshot.collection_progress = int((idx / total_steps) * 100)
+                db.session.commit()
+
+                server_users = 0
+                server_fav_count = 0
+
+                try:
+                    # Get users
+                    if server.server_type == 'plex':
+                        info = server_request(server, '/accounts')
+                        accounts = info.get('MediaContainer', {}).get('Account', [])
+                        users = [{'Id': str(a.get('id')), 'Name': a.get('name', 'Unknown')} for a in accounts]
+                        if not users:
+                            users = [{'Id': '1', 'Name': 'Owner'}]
+                    elif server.server_type == 'audiobookshelf':
+                        users = normalize_abs_users(server_request(server, '/api/users'))
+                        users = [{'Id': u.get('id'), 'Name': u.get('username', 'Unknown')} for u in users]
+                    else:
+                        users = server_request(server, '/Users')
+                        users = [{'Id': u.get('Id'), 'Name': u.get('Name', 'Unknown')} for u in users]
+
+                    server_users = len(users)
+                    stats['users']['total'] += server_users
+
+                    # Get favorites for all users
+                    for user in users:
+                        user_id = user.get('Id')
+                        try:
+                            if server.server_type == 'plex':
+                                result = server_request(server, '/library/all', params={'userRating>>': '7'})
+                                metadata = result.get('MediaContainer', {}).get('Metadata', [])
+                                fav_count = len(metadata)
+                            elif server.server_type == 'audiobookshelf':
+                                user_name = user.get('Name')
+                                collections = normalize_abs_collections(server_request(server, '/api/collections'))
+                                fav_count = 0
+                                for collection in collections:
+                                    name = (collection.get('name') or '').lower()
+                                    if user_name and user_name.lower() in name and ('favorite' in name or 'favourite' in name):
+                                        item_ids, _ = abs_collection_item_ids(collection)
+                                        fav_count += len(item_ids)
+                                        break
+                            else:
+                                params = {'Filters': 'IsFavorite', 'Recursive': 'true'}
+                                favorites = server_request(server, f'/Users/{user_id}/Items', params=params)
+                                items = favorites.get('Items', [])
+                                fav_count = len(items)
+                                for item in items:
+                                    item_type = item.get('Type', 'Other')
+                                    stats['favorites']['by_type'][item_type] = stats['favorites']['by_type'].get(item_type, 0) + 1
+
+                            server_fav_count += fav_count
+                        except Exception:
+                            continue
+
+                except Exception as e:
+                    app.logger.warning(f'Stats collection error for {server.name}: {e}')
+
+                stats['users']['by_server'].append({'id': server.id, 'name': server.name, 'count': server_users})
+                stats['favorites']['by_server'].append({'id': server.id, 'name': server.name, 'count': server_fav_count})
+                stats['favorites']['total'] += server_fav_count
+
+            # Save final stats
+            snapshot.collection_message = 'Saving results...'
+            snapshot.collection_progress = 95
+            db.session.commit()
+
+            snapshot.servers_total = stats['servers']['total']
+            snapshot.servers_by_type = json.dumps(stats['servers']['by_type'])
+            snapshot.users_total = stats['users']['total']
+            snapshot.users_by_server = json.dumps(stats['users']['by_server'])
+            snapshot.favorites_total = stats['favorites']['total']
+            snapshot.favorites_by_server = json.dumps(stats['favorites']['by_server'])
+            snapshot.favorites_by_type = json.dumps(stats['favorites']['by_type'])
+            snapshot.collection_status = 'completed'
+            snapshot.collection_progress = 100
+            snapshot.collection_message = 'Collection completed'
+            snapshot.duration_seconds = time.time() - start_time
+            db.session.commit()
+
+            app.logger.info(f'Stats collection completed in {snapshot.duration_seconds:.1f}s')
+
+        except Exception as e:
+            snapshot.collection_status = 'failed'
+            snapshot.collection_message = str(e)
+            snapshot.duration_seconds = time.time() - start_time
+            db.session.commit()
+            app.logger.error(f'Stats collection failed: {e}')
+
+        finally:
+            _stats_collection_task['running'] = False
+            _stats_collection_task['snapshot_id'] = None
+
+
+@app.route('/api/stats/collect', methods=['POST'])
+def start_stats_collection():
+    """Start a new statistics collection task."""
+    if _stats_collection_task['running']:
+        snapshot = StatsSnapshot.query.get(_stats_collection_task['snapshot_id'])
+        if snapshot:
+            return jsonify({
+                'message': 'Collection already in progress',
+                'snapshot': snapshot.to_dict()
+            }), 409
+
+    # Create new snapshot
+    snapshot = StatsSnapshot(
+        collection_status='pending',
+        collection_progress=0,
+        collection_message='Queued for collection'
+    )
+    db.session.add(snapshot)
+    db.session.commit()
+
+    _stats_collection_task['running'] = True
+    _stats_collection_task['snapshot_id'] = snapshot.id
+
+    # Start background thread
+    import threading
+    thread = threading.Thread(target=collect_stats_task, args=(snapshot.id,))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'message': 'Collection started',
+        'snapshot': snapshot.to_dict()
+    }), 202
+
+
+@app.route('/api/stats/collect/status', methods=['GET'])
+def get_collection_status():
+    """Get the status of the current or most recent collection."""
+    if _stats_collection_task['running'] and _stats_collection_task['snapshot_id']:
+        snapshot = StatsSnapshot.query.get(_stats_collection_task['snapshot_id'])
+        if snapshot:
+            return jsonify({'running': True, 'snapshot': snapshot.to_dict()})
+
+    # Get most recent snapshot
+    snapshot = StatsSnapshot.query.order_by(StatsSnapshot.created_at.desc()).first()
+    return jsonify({
+        'running': False,
+        'snapshot': snapshot.to_dict() if snapshot else None
+    })
+
+
+@app.route('/api/stats/snapshots', methods=['GET'])
+def list_snapshots():
+    """List historical statistics snapshots."""
+    limit = int(request.args.get('limit', 30))
+    snapshots = StatsSnapshot.query.order_by(StatsSnapshot.created_at.desc()).limit(limit).all()
+    return jsonify([s.to_dict() for s in snapshots])
+
+
+@app.route('/api/stats/snapshots/<int:snapshot_id>', methods=['GET'])
+def get_snapshot(snapshot_id):
+    """Get a specific snapshot."""
+    snapshot = StatsSnapshot.query.get(snapshot_id)
+    if not snapshot:
+        return jsonify({'error': 'Snapshot not found'}), 404
+    return jsonify(snapshot.to_dict())
+
+
+@app.route('/api/stats/snapshots/<int:snapshot_id>', methods=['DELETE'])
+def delete_snapshot(snapshot_id):
+    """Delete a snapshot."""
+    snapshot = StatsSnapshot.query.get(snapshot_id)
+    if not snapshot:
+        return jsonify({'error': 'Snapshot not found'}), 404
+    db.session.delete(snapshot)
+    db.session.commit()
+    return jsonify({'message': 'Snapshot deleted'})
 
 
 # ============ Server Management ============

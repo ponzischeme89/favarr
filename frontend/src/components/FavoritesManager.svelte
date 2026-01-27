@@ -876,6 +876,9 @@
                     <span>?</span>
                   </div>
                 {/if}
+                <div class="card-overlay">
+                  <span class="card-overlay-title">{item.Name}</span>
+                </div>
                 {#if !bulkSelectMode}
                   <button
                     class="card-remove"
@@ -2106,6 +2109,28 @@
     font-size: 20px;
   }
 
+  .card-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 24px 8px 8px;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.6) 50%, transparent 100%);
+  }
+
+  .card-overlay-title {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 600;
+    color: #fff;
+    line-height: 1.3;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  }
+
   .card-remove {
     position: absolute;
     top: 8px;
@@ -2137,16 +2162,22 @@
 
   .card-info {
     padding: 10px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
   }
 
   .card-title {
     font-weight: 600;
-    font-size: 12px;
-    color: var(--text-primary);
-    white-space: nowrap;
+    font-size: 13px;
+    color: #fff;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
+    line-height: 1.3;
     margin-bottom: 4px;
+    min-height: 2.6em;
   }
 
   .card-meta {

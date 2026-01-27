@@ -1,7 +1,7 @@
 # Favarr
 
 <div align="center">
-  <img src="docs/images/favarr_logo_v7.png" alt="Favarr logo" height="350">
+  <img src="docs/images/favarr_logo_v7.png" alt="Favarr logo" width="60%">
   <p><em>Media server favourites manager (Support for Plex, Jellyfin, Emby and Audiobookshelf)</em></p>
 </div>
 
@@ -11,7 +11,8 @@ Favarr is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobo
 - God-mode Access: Switch between any user on your servers to prune or add favorites instantly.
 - Cross-Platform: One interface for your entire media stack (Plex, Jellyfin, Emby, and ABS).
 - Fix Messy Libraries: Bulk-manage users who "heart" everything or help less tech-savvy users curate their collections.
-- ABS Collections: Native support for Audiobookshelf user-named collections with tag fallback (e.g. Matt's Favourites)
+- ABS Collections: Basic support for Audiobookshelf user-named collections with tag fallback (e.g. Matt's Favourites)
+- Stats: Total user favourite counts, favourites by media type, and server breakdowns.
 
 ## Screenshots
 
