@@ -7,7 +7,8 @@ FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
-RUN npm ci --ignore-scripts --include=dev
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --ignore-scripts --include=dev
 
 COPY frontend/ ./
 RUN npm run build
@@ -19,13 +20,13 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PORT=5000
 
 WORKDIR /app
 
 COPY server/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
 COPY server/ .
 COPY --from=frontend-build /app/frontend/dist ./frontend_dist
