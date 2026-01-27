@@ -3,10 +3,10 @@
 ## Build stage: bundle Svelte/Vite frontend
 FROM node:20-alpine AS build
 WORKDIR /app
-ENV NODE_ENV=production
 
+# Install all deps (dev deps needed for Vite build)
 COPY frontend/package*.json ./
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --include=dev
 
 COPY frontend/ ./
 RUN npm run build
@@ -15,7 +15,8 @@ RUN npm run build
 FROM nginx:1.25-alpine
 
 ENV API_PROXY_TARGET=http://server:5000 \
-    PORT=4173
+    PORT=4173 \
+    NODE_ENV=production
 
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
