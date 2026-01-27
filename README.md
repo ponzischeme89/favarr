@@ -44,39 +44,37 @@ npm run dev
 ```
 Open http://localhost:3000. The proxy sends API calls to the Flask server, so both processes need to be running.
 
-## Quick start (Docker Compose)
-Images are expected to be published to GHCR via the release workflow under:
-- Frontend: `ghcr.io/ponzischeme89/favarr-frontend:latest`
-- API: `ghcr.io/ponzischeme89/favarr-api:latest`
+## Quick start (Docker / Compose)
+Single image published to GHCR: `ghcr.io/ponzischeme89/favarr:latest`
+
+```bash
+docker run -d \
+  --name favarr \
+  -p 5050:5000 \
+  -e TZ=Etc/UTC \
+  ghcr.io/ponzischeme89/favarr:latest
+```
+
+Or with Compose:
 
 ```yaml
 version: "3.9"
 services:
-  api:
-    image: ghcr.io/ponzischeme89/favarr-api:latest   # built from /server
-    container_name: favarr-api
+  favarr:
+    image: ghcr.io/ponzischeme89/favarr:latest
+    container_name: favarr
     restart: unless-stopped
     environment:
       - TZ=Etc/UTC
     ports:
-      - "5050:5000"        # host:container
-
-  frontend:
-    image: ghcr.io/ponzischeme89/favarr-frontend:latest   # built from /frontend
-    container_name: favarr-frontend
-    restart: unless-stopped
-    depends_on:
-      - api
-    environment:
-      - API_PROXY_TARGET=http://api:5000   # nginx forwards /api to backend
-      - PORT=4173
-    ports:
-      - "4173:4173"        # host:container
+      - "5050:5000"
+    # volumes:
+    #   - ./data:/config   # optional: when persistence is wired up
 ```
 
 Notes
-- If you’re iterating locally, you can swap `image:` for `build:` using the same service names to build from your working copy.
-- Backend SQLite DB and logs currently live inside the container; add a volume to persist them once a `/config` path is wired up in the image.
+- The image bundles the Flask API and the built frontend; only port 5000 needs to be exposed.
+- `dist` is baked at build time, so rebuild the image after UI changes.
 
 ## Using Favarr
 - Go to Settings → “Add Integration” and choose your server type. Supply URL + API key/token. Use “Test Connection” to verify.

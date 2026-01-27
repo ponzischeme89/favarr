@@ -80,11 +80,6 @@ temp/
 !README.md
 docs/
 
-# Docker files (prevent recursive issues)
-Dockerfile*
-docker-compose*.yml
-.dockerignore
-
 # CI/CD
 .github/
 .gitlab-ci.yml

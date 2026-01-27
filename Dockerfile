@@ -1,25 +1,35 @@
 # syntax=docker/dockerfile:1.6
 
-## Build stage: bundle Svelte/Vite frontend
-FROM node:20-alpine AS build
-WORKDIR /app
+############################
+# Build frontend (Svelte/Vite)
+############################
+FROM node:20-alpine AS frontend-build
+WORKDIR /app/frontend
 
-# Install all deps (dev deps needed for Vite build)
 COPY frontend/package*.json ./
 RUN npm ci --ignore-scripts --include=dev
 
 COPY frontend/ ./
 RUN npm run build
 
-## Runtime stage: serve static assets with nginx and proxy /api to backend
-FROM nginx:1.25-alpine
+############################
+# Runtime (Flask API + static SPA)
+############################
+FROM python:3.12-slim
 
-ENV API_PROXY_TARGET=http://server:5000 \
-    PORT=4173 \
-    NODE_ENV=production
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PORT=5000
 
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
+WORKDIR /app
 
-EXPOSE 4173
-CMD ["nginx", "-g", "daemon off;"]
+COPY server/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY server/ .
+COPY --from=frontend-build /app/frontend/dist ./frontend_dist
+
+EXPOSE 5000
+
+CMD ["gunicorn", "-b", "0.0.0.0:5000", "--workers", "2", "--threads", "4", "--timeout", "0", "app:app"]

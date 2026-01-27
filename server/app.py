@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, Response
+from flask import Flask, jsonify, request, Response, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import requests
@@ -9,11 +9,13 @@ from functools import wraps
 from collections import deque
 import json
 
-app = Flask(__name__)
+basedir = os.path.abspath(os.path.dirname(__file__))
+static_dir = os.path.abspath(os.path.join(basedir, '..', 'frontend_dist'))
+
+app = Flask(__name__, static_folder=static_dir, static_url_path='')
 CORS(app)
 
 # Database configuration
-basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'favarr.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 log_dir = os.path.join(basedir, 'logs')
@@ -1203,6 +1205,15 @@ def get_image(server_id, item_id):
         )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============ Frontend SPA ============
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    if static_dir and os.path.exists(os.path.join(static_dir, path)) and path != '':
+        return send_from_directory(static_dir, path)
+    return send_from_directory(static_dir, 'index.html')
 
 
 if __name__ == '__main__':
