@@ -21,6 +21,7 @@
   let toast = '';
   let toastType = 'success';
   let toastTimer = null;
+  let sortedIntegrations = [];
 
   // Statistics state
   let stats = null;
@@ -231,6 +232,15 @@
       integrationsLoading = false;
     }
   }
+
+  // Keep integrations sorted A–Z by integration type, then by name
+  $: sortedIntegrations = [...integrations].sort((a, b) => {
+    const typeA = getServerType(a.server_type).name;
+    const typeB = getServerType(b.server_type).name;
+    const typeCompare = typeA.localeCompare(typeB);
+    if (typeCompare !== 0) return typeCompare;
+    return (a.name || '').localeCompare(b.name || '');
+  });
 
   function selectServerType(typeId) {
     const serverType = serverTypes.find(s => s.id === typeId);
@@ -631,7 +641,7 @@
           </div>
         {:else}
           <div class="integrations-list">
-            {#each integrations as integration (integration.id)}
+            {#each sortedIntegrations as integration (integration.id)}
               {@const typeInfo = getServerTypeInfo(integration.server_type)}
               {@const status = connectionStatus[integration.id] || 'unknown'}
               <div class="integration-card">
@@ -722,7 +732,7 @@
             <span>No log entries yet</span>
           </div>
         {:else}
-          {#each logEntries as entry (entry.raw)}
+          {#each logEntries as entry, index (index)}
             <div class="log-entry">
               <span class="log-level" class:info={entry.level === 'INFO'} class:error={entry.level === 'ERROR'} class:warning={entry.level === 'WARNING' || entry.level === 'WARN'} class:debug={entry.level === 'DEBUG'}>
                 {entry.level}

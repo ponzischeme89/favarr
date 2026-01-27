@@ -59,10 +59,13 @@ export function getServerType(typeId) {
 
 // Get all server types as array for iteration
 export function getServerTypesList() {
-  return Object.entries(serverTypes).map(([id, config]) => ({
-    id,
-    ...config
-  }));
+  const order = ['audiobookshelf', 'emby', 'jellyfin', 'plex'];
+  return order
+    .filter((id) => serverTypes[id])
+    .map((id) => ({
+      id,
+      ...serverTypes[id]
+    }));
 }
 
 // Get just the color for a server type

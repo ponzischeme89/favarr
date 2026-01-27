@@ -11,7 +11,7 @@ from collections import deque
 import json
 import platform
 
-VERSION = '1.0.7'
+VERSION = '1.0.9'
 
 # ANSI color codes for terminal output
 class Colors:
@@ -59,8 +59,12 @@ os.makedirs(log_dir, exist_ok=True)
 
 db = SQLAlchemy(app)
 
+# Suppress noisy HTTP access logs from werkzeug and gunicorn
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
+logging.getLogger('gunicorn.access').setLevel(logging.WARNING)
+
 # Logging configuration (file + stdout for Docker)
-formatter = logging.Formatter('[%(asctime)s] %(levelname)s in %(module)s: %(message)s')
+formatter = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 if not any(isinstance(h, RotatingFileHandler) for h in app.logger.handlers):
     file_handler = RotatingFileHandler(log_file, maxBytes=2 * 1024 * 1024, backupCount=3)
@@ -75,6 +79,13 @@ if not any(isinstance(h, logging.StreamHandler) and h.stream == sys.stdout for h
     app.logger.addHandler(stdout_handler)
 
 app.logger.setLevel(logging.INFO)
+
+
+# Helper for structured logging
+def log_service(service, message, level='info'):
+    """Log with service prefix for better filtering."""
+    full_msg = f'[{service}] {message}'
+    getattr(app.logger, level)(full_msg)
 
 # Startup banner with colors
 def print_startup_banner():
@@ -112,6 +123,9 @@ def print_startup_banner():
     print(banner, flush=True)
 
 print_startup_banner()
+
+# Log startup to file
+log_service('System', f'Favarr started - Data directory: {data_dir}')
 
 
 # Database Models
@@ -579,16 +593,6 @@ def get_server_or_404(server_id):
     return server
 
 
-@app.after_request
-def log_request(response):
-    """Basic request logging to file for the log viewer."""
-    try:
-        app.logger.info('%s %s %s', request.method, request.path, response.status_code)
-    except Exception:
-        pass
-    return response
-
-
 # Health check
 @app.route('/api/health', methods=['GET'])
 def health():
@@ -955,6 +959,7 @@ def create_server():
     db.session.add(server)
     db.session.commit()
 
+    log_service('Server', f'Created {server.server_type} server "{server.name}" (id={server.id})')
     return jsonify(server.to_dict()), 201
 
 
@@ -990,6 +995,7 @@ def update_server(server_id):
         server.enabled = data['enabled']
 
     db.session.commit()
+    log_service('Server', f'Updated server "{server.name}" (id={server_id})')
     return jsonify(server.to_dict())
 
 
@@ -1000,8 +1006,10 @@ def delete_server(server_id):
     if not server:
         return jsonify({'error': 'Server not found'}), 404
 
+    server_name = server.name
     db.session.delete(server)
     db.session.commit()
+    log_service('Server', f'Deleted server "{server_name}" (id={server_id})')
     return jsonify({'message': 'Server deleted'})
 
 
@@ -1012,10 +1020,14 @@ def test_server(server_id):
     if not server:
         return jsonify({'error': 'Server not found'}), 404
 
+    log_service('Server', f'Testing connection to "{server.name}" ({server.server_type})')
+
     try:
         info = get_server_info_internal(server)
+        log_service('Server', f'Connection test passed for "{server.name}"')
         return jsonify({'success': True, 'info': info})
     except Exception as e:
+        log_service('Server', f'Connection test failed for "{server.name}": {e}', level='warning')
         return jsonify({'success': False, 'error': str(e)}), 400
 
 
@@ -1031,10 +1043,12 @@ def get_server_info_internal(server):
             'ServerType': 'plex'
         }
     elif server.server_type == 'audiobookshelf':
-        info = server_request(server, '/api/status')
+        # Use /api/libraries to verify API key works (authenticated endpoint)
+        libs = server_request(server, '/api/libraries')
+        lib_count = len(libs.get('libraries', []))
         return {
-            'ServerName': info.get('serverSettings', {}).get('name', 'Audiobookshelf'),
-            'Version': info.get('version', ''),
+            'ServerName': 'Audiobookshelf',
+            'Version': f'{lib_count} libraries',
             'ServerType': 'audiobookshelf'
         }
     else:  # emby or jellyfin
@@ -1283,6 +1297,9 @@ def get_items(server_id):
     default_limit = 3500 if server.server_type == 'audiobookshelf' else 50
     limit = int(limit_param) if limit_param is not None else default_limit
 
+    if search:
+        log_service('Search', f'Query "{search}" on {server.server_type} (server_id={server_id})')
+
     try:
         if server.server_type == 'plex':
             disallowed_types = {'episode', 'program', 'person'}
@@ -1314,24 +1331,32 @@ def get_items(server_id):
                     'Played': plex_item_played(item)
                 }
             } for item in filtered[:limit]]
+            if search:
+                log_service('Search', f'Found {len(items)} results for "{search}" on plex')
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
         elif server.server_type == 'audiobookshelf':
+            libs = server_request(server, '/api/libraries').get('libraries', [])
+            abs_items = []
+
             if search:
-                # For search, scan all libraries to avoid missing items
-                libs = server_request(server, '/api/libraries').get('libraries', [])
-                abs_items = []
+                # Use native search endpoint for each library
                 for lib in libs:
-                    lib_items = server_request(
-                        server,
-                        f'/api/libraries/{lib["id"]}/items',
-                        params={'limit': limit}
-                    )
-                    abs_items.extend(lib_items.get('results', []))
-                abs_items = [
-                    i for i in abs_items
-                    if search.lower() in i.get('media', {}).get('metadata', {}).get('title', '').lower()
-                ]
+                    try:
+                        search_result = server_request(
+                            server,
+                            f'/api/libraries/{lib["id"]}/search',
+                            params={'q': search, 'limit': limit}
+                        )
+                        # Search returns different structure: book/podcast results
+                        for key in ('book', 'podcast', 'audiobook', 'libraryItems'):
+                            if key in search_result and isinstance(search_result[key], list):
+                                abs_items.extend(search_result[key])
+                        # Also check for direct results array
+                        if isinstance(search_result, list):
+                            abs_items.extend(search_result)
+                    except Exception as e:
+                        log_service('Search', f'ABS library {lib.get("id")} search failed: {e}', level='warning')
             elif parent_id:
                 result = server_request(
                     server,
@@ -1341,8 +1366,6 @@ def get_items(server_id):
                 abs_items = result.get('results', [])
             else:
                 # Get items from all libraries
-                libs = server_request(server, '/api/libraries').get('libraries', [])
-                abs_items = []
                 for lib in libs:
                     lib_items = server_request(
                         server,
@@ -1351,10 +1374,17 @@ def get_items(server_id):
                     )
                     abs_items.extend(lib_items.get('results', []))
 
-            if search:
-                abs_items = [i for i in abs_items if search.lower() in i.get('media', {}).get('metadata', {}).get('title', '').lower()]
+            # Handle search results which may have nested libraryItem
+            normalized_items = []
+            for item in abs_items[:limit]:
+                if 'libraryItem' in item:
+                    normalized_items.append(item['libraryItem'])
+                else:
+                    normalized_items.append(item)
 
-            items = [abs_map_item(item) for item in abs_items[:limit]]
+            items = [abs_map_item(item) for item in normalized_items]
+            if search:
+                log_service('Search', f'Found {len(items)} results for "{search}" on audiobookshelf')
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
         else:  # emby or jellyfin
@@ -1363,7 +1393,7 @@ def get_items(server_id):
                 'Recursive': request.args.get('recursive', 'true'),
                 'IncludeItemTypes': include_types,
                 'StartIndex': request.args.get('start', 0),
-                'Limit': limit,
+                'Limit': limit * 3 if search else limit,  # Fetch more to filter
                 'SortBy': request.args.get('sort_by', 'SortName'),
                 'SortOrder': request.args.get('sort_order', 'Ascending'),
                 'Fields': 'Overview,Path,MediaSources,UserData'
@@ -1373,8 +1403,20 @@ def get_items(server_id):
             if search:
                 params['SearchTerm'] = search
 
-            items = server_request(server, '/Items', params=params)
-            return jsonify(items)
+            result = server_request(server, '/Items', params=params)
+
+            # Emby/Jellyfin does fuzzy word matching - filter to items containing search term
+            if search and 'Items' in result:
+                search_lower = search.lower()
+                filtered_items = [
+                    item for item in result['Items']
+                    if search_lower in (item.get('Name', '') or '').lower()
+                ]
+                result['Items'] = filtered_items[:limit]
+                result['TotalRecordCount'] = len(filtered_items)
+                log_service('Search', f'Found {len(filtered_items)} results for "{search}" on {server.server_type}')
+
+            return jsonify(result)
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1445,6 +1487,8 @@ def add_favorite(server_id, user_id, item_id):
     server = get_server_or_404(server_id)
     if not server:
         return jsonify({'error': 'Server not found'}), 404
+
+    log_service('Favorites', f'Adding item {item_id} for user {user_id} on {server.server_type}')
 
     try:
         if server.server_type == 'plex':
@@ -1527,6 +1571,8 @@ def remove_favorite(server_id, user_id, item_id):
     server = get_server_or_404(server_id)
     if not server:
         return jsonify({'error': 'Server not found'}), 404
+
+    log_service('Favorites', f'Removing item {item_id} for user {user_id} on {server.server_type}')
 
     try:
         if server.server_type == 'plex':

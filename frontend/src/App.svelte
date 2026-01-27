@@ -6,7 +6,7 @@
   import UnifiedSearch from './components/UnifiedSearch.svelte';
   import { getServerType, getServerGradient, usesNativeColor } from './serverIcons';
 
-  const appVersion = 'v1.0.8';
+  const appVersion = 'v1.0.9';
   let logoShine = true;
 
   let servers = [];
@@ -14,6 +14,7 @@
   let currentView = 'favorites';
   let loading = true;
   let error = null;
+  let apiDown = false;
   let previousView = 'favorites';
   let globalSearchInput = '';
   let globalSearchTerm = '';
@@ -24,6 +25,7 @@
   let suggestionDebounce;
   let showSuggestions = false;
   let randomSuggestions = [];
+  let sortedServers = [];
 
   // Server management
   let showAddServer = false;
@@ -38,18 +40,45 @@
 
   async function loadServers() {
     loading = true;
+    apiDown = false;
     try {
       servers = await api.getServers();
       if (servers.length > 0 && !selectedServer) {
         selectServer(servers[0]);
       }
       error = null;
+      apiDown = false;
     } catch (e) {
-      error = e.message;
+      // Check if it's a network/connection error (API completely unreachable)
+      const msg = (e.message || '').toLowerCase();
+      const isNetworkError =
+        e.name === 'TypeError' ||
+        msg.includes('failed to fetch') ||
+        msg.includes('networkerror') ||
+        msg.includes('network') ||
+        msg.includes('fetch') ||
+        msg.includes('connection') ||
+        msg.includes('econnrefused') ||
+        msg.includes('timeout') ||
+        msg.includes('abort');
+
+      if (isNetworkError) {
+        apiDown = true;
+        error = 'Cannot connect to the Favarr API';
+      } else {
+        error = e.message;
+      }
     } finally {
       loading = false;
     }
   }
+
+  // Keep servers sorted A–Z by integration type, then name
+  $: sortedServers = [...servers].sort((a, b) => {
+    const typeCompare = getServerType(a.server_type).name.localeCompare(getServerType(b.server_type).name);
+    if (typeCompare !== 0) return typeCompare;
+    return (a.name || '').localeCompare(b.name || '');
+  });
 
   loadServers();
 
@@ -331,12 +360,16 @@
         <div class="sidebar-divider"></div>
         <div class="section-header">
           <span class="text-xs font-medium text-[--text-secondary] uppercase tracking-wide">Servers</span>
-          <button class="add-btn" on:click={() => showAddServer = true} title="Add Server">+</button>
+          <button class="add-btn" on:click={() => showAddServer = true} title="Add Server" disabled={apiDown}>+</button>
         </div>
 
         {#if loading}
           <div class="p-4 text-center">
             <div class="animate-pulse text-[--text-tertiary] text-sm">Loading...</div>
+          </div>
+        {:else if apiDown}
+          <div class="p-4 text-center">
+            <p class="text-sm text-[--text-tertiary]">API unavailable</p>
           </div>
         {:else if servers.length === 0}
           <div class="p-4 text-center">
@@ -347,7 +380,7 @@
           </div>
         {:else}
           <div class="server-list">
-            {#each servers as server}
+            {#each sortedServers as server}
               <button
                 class="server-item"
                 class:active={selectedServer?.id === server.id}
@@ -434,11 +467,46 @@
       </div>
     {/if}
 
-    {#if error}
-      <div class="alert alert-error m-4">{error}</div>
-    {/if}
+    {#if apiDown}
+      <div class="api-down-state">
+        <div class="skull-container">
+          <svg class="skull-icon" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="10" r="8"/>
+            <circle cx="9" cy="9" r="1.5" fill="currentColor"/>
+            <circle cx="15" cy="9" r="1.5" fill="currentColor"/>
+            <path d="M9 15v3M12 15v3M15 15v3"/>
+            <path d="M8 13c0 0 2 2 4 2s4-2 4-2"/>
+          </svg>
+          <div class="orbit-ring">
+            <svg class="orbit-star s1" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <svg class="orbit-star s2" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+            <svg class="orbit-star s3" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          </div>
+          <span class="skull-glow" aria-hidden="true"></span>
+        </div>
+        <h2 class="api-down-title">API Unreachable</h2>
+        <p class="api-down-message">{error || 'The Favarr backend is not responding'}</p>
+        <p class="api-down-hint">Check that the server is running and try again</p>
+        <button class="btn btn-primary retry-btn" on:click={loadServers}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 4v6h-6M1 20v-6h6"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+          Retry Connection
+        </button>
+      </div>
+    {:else}
+      {#if error}
+        <div class="alert alert-error m-4">{error}</div>
+      {/if}
 
-    <header class="content-header">
+      <header class="content-header">
       <div class="header-bar">
         <div class="header-brand">
           {#if selectedServer}
@@ -518,27 +586,49 @@
     </header>
 
     {#if !selectedServer}
-      <div class="empty-state">
-        <div class="empty-icon">
-          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
-            <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-            <line x1="6" y1="6" x2="6.01" y2="6"/>
-            <line x1="6" y1="18" x2="6.01" y2="18"/>
-          </svg>
-        </div>
-        <h2 class="text-xl font-bold mb-2">No Server Selected</h2>
-        <p class="text-[--text-secondary] mb-4">
-          {servers.length === 0
-            ? 'Add a media server to get started'
-            : 'Select a server from the sidebar'}
-        </p>
-        {#if servers.length === 0}
-          <button class="btn btn-primary" on:click={() => showAddServer = true}>
+      {#if servers.length === 0}
+        <!-- No Servers Added State -->
+        <div class="no-servers-state">
+          <div class="plug-container">
+            <svg class="plug-icon" width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2v6M8 2v4M16 2v4"/>
+              <rect x="6" y="8" width="12" height="8" rx="2"/>
+              <path d="M10 16v2a2 2 0 0 0 2 2h0a2 2 0 0 0 2-2v-2"/>
+            </svg>
+            <div class="plug-sparks">
+              <span class="spark s1"></span>
+              <span class="spark s2"></span>
+              <span class="spark s3"></span>
+              <span class="spark s4"></span>
+            </div>
+            <span class="plug-glow" aria-hidden="true"></span>
+          </div>
+          <h2 class="no-servers-title">No Servers Connected</h2>
+          <p class="no-servers-message">Connect your first media server to start managing favourites</p>
+          <p class="no-servers-hint">Supports Audiobookshelf, Emby, Jellyfin, and Plex</p>
+          <button class="btn btn-primary add-server-btn" on:click={() => showAddServer = true}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19"/>
+              <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
             Add Your First Server
           </button>
-        {/if}
-      </div>
+        </div>
+      {:else}
+        <!-- Server Not Selected State -->
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+              <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+              <line x1="6" y1="6" x2="6.01" y2="6"/>
+              <line x1="6" y1="18" x2="6.01" y2="18"/>
+            </svg>
+          </div>
+          <h2 class="text-xl font-bold mb-2">No Server Selected</h2>
+          <p class="text-[--text-secondary] mb-4">Select a server from the sidebar</p>
+        </div>
+      {/if}
     {:else}
       <div class="content-area">
         {#if currentView === 'search'}
@@ -564,6 +654,7 @@
           <Settings serverId={selectedServer.id} user={selectedUser} on:warmsearch={handleWarmSearchCache} on:updated={loadServers} />
         {/if}
       </div>
+    {/if}
     {/if}
   </main>
 
@@ -637,8 +728,14 @@
     transition: all 0.2s;
   }
 
-  .add-btn:hover {
+  .add-btn:hover:not(:disabled) {
     transform: scale(1.1);
+  }
+
+  .add-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: var(--text-tertiary);
   }
 
   .server-list {
@@ -949,16 +1046,15 @@
   }
 
   .content-header {
-    padding: 20px 24px;
+    padding: 16px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--bg-secondary);
   }
 
   .header-bar {
-    display: grid;
-    grid-template-columns: auto 1fr auto;
+    display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
     width: 100%;
   }
 
@@ -1266,5 +1362,275 @@
     .global-search {
       max-width: none;
     }
+  }
+
+  /* API Down State */
+  .api-down-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px;
+    min-height: 400px;
+  }
+
+  .skull-container {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  .skull-icon {
+    color: #f87171;
+    animation: skullPulse 2s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(248, 113, 113, 0.4));
+    z-index: 2;
+  }
+
+  .skull-glow {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 50%, rgba(248, 113, 113, 0.3), transparent 60%);
+    filter: blur(15px);
+    animation: glowPulse 2s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .orbit-ring {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    animation: orbitSpin 8s linear infinite;
+  }
+
+  .orbit-star {
+    position: absolute;
+    color: #fbbf24;
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.6));
+  }
+
+  .orbit-star.s1 {
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    animation: starTwinkle 1.5s ease-in-out infinite;
+  }
+
+  .orbit-star.s2 {
+    bottom: 10px;
+    left: 10px;
+    animation: starTwinkle 1.8s ease-in-out infinite 0.3s;
+  }
+
+  .orbit-star.s3 {
+    bottom: 10px;
+    right: 10px;
+    animation: starTwinkle 1.6s ease-in-out infinite 0.6s;
+  }
+
+  .api-down-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #f87171;
+    margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(248, 113, 113, 0.3);
+  }
+
+  .api-down-message {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    max-width: 320px;
+  }
+
+  .api-down-hint {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 24px;
+  }
+
+  .retry-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 14px;
+  }
+
+  .retry-btn:hover {
+    transform: scale(1.02);
+  }
+
+  @keyframes skullPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { opacity: 0.5; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  @keyframes orbitSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes starTwinkle {
+    0%, 100% { opacity: 0.4; transform: scale(0.8); }
+    50% { opacity: 1; transform: scale(1.1); }
+  }
+
+  /* No Servers State */
+  .no-servers-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px;
+    min-height: 400px;
+  }
+
+  .plug-container {
+    position: relative;
+    width: 140px;
+    height: 140px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 24px;
+  }
+
+  .plug-icon {
+    color: var(--accent);
+    animation: plugFloat 2.5s ease-in-out infinite;
+    filter: drop-shadow(0 0 15px rgba(139, 92, 246, 0.4));
+    z-index: 2;
+  }
+
+  .plug-glow {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.25), transparent 60%);
+    filter: blur(12px);
+    animation: plugGlowPulse 2.5s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  .plug-sparks {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .spark {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    background: #fbbf24;
+    border-radius: 50%;
+    box-shadow: 0 0 8px 2px rgba(251, 191, 36, 0.6);
+  }
+
+  .spark.s1 {
+    top: 20%;
+    left: 25%;
+    animation: sparkFly1 1.8s ease-out infinite;
+  }
+
+  .spark.s2 {
+    top: 25%;
+    right: 25%;
+    animation: sparkFly2 2.1s ease-out infinite 0.3s;
+  }
+
+  .spark.s3 {
+    top: 30%;
+    left: 35%;
+    animation: sparkFly3 1.6s ease-out infinite 0.6s;
+  }
+
+  .spark.s4 {
+    top: 28%;
+    right: 35%;
+    animation: sparkFly4 2s ease-out infinite 0.9s;
+  }
+
+  .no-servers-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(139, 92, 246, 0.25);
+  }
+
+  .no-servers-message {
+    font-size: 15px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    max-width: 340px;
+  }
+
+  .no-servers-hint {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin-bottom: 24px;
+  }
+
+  .add-server-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 24px;
+    font-size: 14px;
+  }
+
+  .add-server-btn:hover {
+    transform: scale(1.02);
+  }
+
+  @keyframes plugFloat {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-6px); }
+  }
+
+  @keyframes plugGlowPulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.95); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+  }
+
+  @keyframes sparkFly1 {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+    20% { opacity: 1; transform: translate(-8px, -12px) scale(1); }
+    100% { opacity: 0; transform: translate(-20px, -30px) scale(0); }
+  }
+
+  @keyframes sparkFly2 {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+    20% { opacity: 1; transform: translate(8px, -10px) scale(1); }
+    100% { opacity: 0; transform: translate(22px, -28px) scale(0); }
+  }
+
+  @keyframes sparkFly3 {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+    25% { opacity: 1; transform: translate(-5px, -15px) scale(1.2); }
+    100% { opacity: 0; transform: translate(-12px, -35px) scale(0); }
+  }
+
+  @keyframes sparkFly4 {
+    0% { opacity: 0; transform: translate(0, 0) scale(0.5); }
+    25% { opacity: 1; transform: translate(6px, -14px) scale(1.1); }
+    100% { opacity: 0; transform: translate(15px, -32px) scale(0); }
   }
 </style>

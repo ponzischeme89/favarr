@@ -1,15 +1,34 @@
 const API_BASE = '/api';
 
 async function fetchJson(url, options = {}) {
-  const response = await fetch(`${API_BASE}${url}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers
-    },
-    ...options
-  });
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${url}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    });
+  } catch (e) {
+    // Network error - API completely unreachable
+    const err = new Error('Failed to fetch');
+    err.name = 'TypeError';
+    throw err;
+  }
 
-  const data = await response.json();
+  let data;
+  try {
+    data = await response.json();
+  } catch (e) {
+    // JSON parsing failed - server might be returning error page
+    if (!response.ok) {
+      const err = new Error('Failed to fetch');
+      err.name = 'TypeError';
+      throw err;
+    }
+    throw new Error('Invalid response from server');
+  }
 
   if (!response.ok) {
     throw new Error(data.error || 'API request failed');
