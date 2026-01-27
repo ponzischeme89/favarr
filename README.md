@@ -5,16 +5,13 @@
   <p><em>Multi-server favourites wrangler for Emby, Jellyfin, Plex, and Audiobookshelf — because Dad still can’t find the star button.</em></p>
 </div>
 
-Favarr is a tiny multi-server favourite-fixer that lets you edit anyone’s favourites across Emby/Jellyfin/Plex/Audiobookshelf from one place. No juggling apps, no remote-controlling your dad’s TV, no sighing dramatically.
-
-Use it to clean up messy libraries, curate playlists for the olds, or fix that one user who somehow hearts every item they scroll past.
+Favarr is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobookshelf that lets you edit any user's favorites from a single interface. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
 
 ## Features
-- Connect multiple servers and store credentials locally (SQLite).
-- Switch between users on a server and manage their favourites with one click.
-- Unified search with fast suggestions across every connected server.
-- Library, Recent and Favourites views share the same lightweight grid UI.
-- Audiobookshelf support with user‑named “Favourites” collections (with tag fallback).
+- God-mode Access: Switch between any user on your servers to prune or add favorites instantly.
+- Cross-Platform: One interface for your entire media stack (Plex, Jellyfin, Emby, and ABS).
+- Fix Messy Libraries: Bulk-manage users who "heart" everything or help less tech-savvy users curate their collections.
+- ABS Collections: Native support for Audiobookshelf user-named collections with tag fallback (e.g. Matt's Favourites)
 
 ## Intergrations
 | Server | Auth expected | Notes |
