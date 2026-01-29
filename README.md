@@ -1,9 +1,9 @@
 <div align="center">
   <img src="docs/logo_faveswitch.png" alt="FaveSwitch logo" width="60%">
-  <p>A favorites manager <em>(favourites if your American)</em> for Jellyfin, Emby, PleX and Audiobookshelf)</p>
+  <p>A favorites manager <em>(favourites if your American)</em> for <b>Jellyfin, Emby, PleX and Audiobookshelf.</b></p>
 </div>
 
-FaveSwitch is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobookshelf that lets you edit any user's favorites from a single interface. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
+FaveSwitch is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobookshelf that lets you edit any user's favorites from a single interface. All you need is an admin API key for your media server. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
 
 ## Features
 - God-mode Access: Switch between any user on your servers to prune or add favorites instantly.
