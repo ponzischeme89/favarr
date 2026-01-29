@@ -1,7 +1,7 @@
 # FaveSwitch
 
 <div align="center">
-  <img src="docs/images/FaveSwitch_logo_v7.png" alt="FaveSwitch logo" width="60%">
+  <img src="docs/logo_faveswitch.png" alt="FaveSwitch logo" width="60%">
   <p><em>Media server favourites manager (Support for Plex, Jellyfin, Emby and Audiobookshelf)</em></p>
 </div>
 
