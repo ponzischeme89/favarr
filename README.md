@@ -1,6 +1,6 @@
 <div align="center">
   <img src="docs/logo_faveswitch.png" alt="FaveSwitch logo" width="60%">
-  <p><em>A favorites (favourites if your American) manager for Jellyfin, Emby, PleX and Audiobookshelf)</em></p>
+  <p>A favorites manager <em>(favourites if your American)</em> for Jellyfin, Emby, PleX and Audiobookshelf)</p>
 </div>
 
 FaveSwitch is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobookshelf that lets you edit any user's favorites from a single interface. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
@@ -36,9 +36,9 @@ FaveSwitch is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Aud
   Settings page</i>
 </p>
 
-## Why FaveSwitch?
+## Who is FaveSwitch for?
 
-Most media servers make it impossible to manage things from the user's perspective without actually being them. FaveSwitch fixes the administrative gaps that Plex, Jellyfin, and Emby ignore:
+Most media servers make it impossible to manage things from the user's perspective without actually <i>being</i> them. FaveSwitch fixes the administrative gaps that Plex, Jellyfin, and Emby ignore:
 
 - Remote Curation: Stop walking your parents through "how to heart a movie" over the phone. Just do it for them from your own dashboard.
 - The "Clean Up" Tool: Fix the user who accidentally favorites 400 items, or prep a "Must Watch" list for a friend without needing their password.
@@ -53,7 +53,7 @@ Most media servers make it impossible to manage things from the user's perspecti
 | Plex | X-Plex Token | Uses ratings API to flag favourites |
 | Audiobookshelf | JWT token | Creates/updates a per-user favourites collection; falls back to tags if needed |
 
-## Quick start (Docker / Compose)
+## Quick Start
 Single image published to GHCR: `ghcr.io/ponzischeme89/FaveSwitch:latest`
 
 ```bash
@@ -81,20 +81,20 @@ services:
     #   - ./data:/config   # optional: when persistence is wired up
 ```
 
-## Using FaveSwitch
+## Getting Started
 - Go to Settings → “Add Integration” and choose your server type. Supply URL + API key/token. Use “Test Connection” to verify.
 - Pick a server from the sidebar, then select a user from the header dropdown.
 - Browse Libraries or Recent to add/remove favourites, or use the Favourites view to prune quickly.
 - Unified Search searches every integration and can warm its cache for faster suggestions.
 - Logs tab shows the tail of `server/logs/app.log` for quick debugging.
 
-## Limitations
-- Audiobookshelf collections are global, not user-scoped, so “per-user favourites” are simulated by naming conventions and best-effort filtering; collisions are possible on shared servers.
+## Limitations of FaveSwitch
+- Audiobookshelf <i>collections</i> are global, not user-scoped, so “per-user favourites” are simulated by naming conventions and best-effort filtering; collisions are possible on shared servers. E.g. two users can't have the same book (yet).
 - ABS collection APIs lack atomic add/remove; updates replace the whole item list, so concurrent edits can race. FaveSwitch mitigates but can’t fully prevent this.
 - ABS metadata is inconsistent across versions; fallback to tag-based favourites is used when collections break, which means favourites may appear as tags instead of lists.
 
 ## Roadmap
-- Auth
+- User auth
 - API - so you can see stats inside Homepage, other external services
 - Export/import server integrations.
 
