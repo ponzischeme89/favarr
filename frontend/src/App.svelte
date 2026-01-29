@@ -6,7 +6,7 @@
   import UnifiedSearch from './components/UnifiedSearch.svelte';
   import { getServerType, getServerGradient, usesNativeColor } from './serverIcons';
 
-  const appVersion = 'v1.1.0';
+  const appVersion = 'v1.1.1';
   let logoShine = true;
 
   let servers = [];
@@ -366,7 +366,7 @@
           class:shining={logoShine}
           on:animationend={() => (logoShine = false)}
         >
-          FaveSwitch
+          <img src="/src/logo_faveswitch.png" alt="" />
         </h1>
         <div class="sidebar-divider"></div>
         <div class="section-header">

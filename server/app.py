@@ -37,7 +37,7 @@ from favarr.services import (
     server_request,
 )
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 
 # ANSI color codes for terminal output
 class Colors:
