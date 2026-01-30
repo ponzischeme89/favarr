@@ -35,14 +35,12 @@ FaveSwitch (formally Favarr) is a self-hosted favourites manager for Plex, Jelly
   Settings page</i>
 </p>
 
-## Who is FaveSwitch for?
-
-Most media servers make it impossible to manage things from the user's perspective without actually <i>being</i> them. FaveSwitch fixes the administrative gaps that Plex, Jellyfin, and Emby ignore:
-
-- Remote Curation: Stop walking your parents through "how to heart a movie" over the phone. Just do it for them from your own dashboard.
-- The "Clean Up" Tool: Fix the user who accidentally favorites 400 items, or prep a "Must Watch" list for a friend without needing their password.
-- Platform Agnostic: If you run a split stack (e.g., Plex for movies, JF for anime), you can manage everything in one tab instead of flipping between three different web UIs.
-- Zero Overhead: It’s a tiny tool that does one thing: it lets you act as a "Favorites Admin" across your entire server list.
+## Use Cases
+- Manage favourites for family remotely by curating or fixing their lists without needing to log in as them.
+- Clean up accidental favourite spam when a user stars hundreds of items or wrecks their own library.
+- Control favourites across mixed setups like Plex for movies, Jellyfin for anime, and Emby for TV — all from one tab.
+- Build curated watchlists for others (Kids, Parents, Friends) without needing their credentials or device access.
+- Use a lightweight admin panel that requires no plugins, extra services, or server modifications — just your existing API keys.
 
 ## Intergrations
 | Server | Auth expected | Notes |
