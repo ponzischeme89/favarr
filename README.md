@@ -14,9 +14,8 @@ FaveSwitch (formally Favarr) is a self-hosted favourites manager for Plex, Jelly
 
 > [!TIP]
 > **Help support FaveSwitch and give our repo a star!**  
-> If you enjoy FaveSwitch and want to help support me, please consider starring my repo. Thank you so much
-> Discord support here:   
-> 👉 https://discord.gg/jycHt7jDJF
+> If you enjoy FaveSwitch and want to help support me, please consider starring my repo.
+> Thank you so much
 
 ## Screenshots
 
@@ -54,7 +53,7 @@ Most media servers make it impossible to manage things from the user's perspecti
 | Audiobookshelf | JWT token | Creates/updates a per-user favourites collection; falls back to tags if needed |
 
 ## Quick Start
-Single image published to GHCR: `ghcr.io/ponzischeme89/FaveSwitch:latest`
+Single image published to GHCR: `ghcr.io/ponzischeme89/faveswitch:latest`
 
 ```bash
 docker run -d \
