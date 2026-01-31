@@ -438,6 +438,7 @@
     {/if}
 
     {#if quickViewItem}
+      <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
       <div
         class="quickview-backdrop"
         on:click={() => quickViewItem = null}
@@ -446,7 +447,8 @@
         aria-modal="true"
         tabindex="-1"
       >
-        <div class="quickview" on:click|stopPropagation on:keydown|stopPropagation role="document">
+        <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+        <div class="quickview" on:click|stopPropagation on:keydown|stopPropagation role="document" tabindex="-1">
           <div class="qv-header">
             <div class="qv-title">{quickViewItem.Name}</div>
             <button class="qv-close" on:click={() => quickViewItem = null} title="Close (Esc)">✕</button>

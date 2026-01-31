@@ -1,4 +1,5 @@
 import json
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
@@ -17,17 +18,44 @@ def get_server_headers(server):
     return {"X-Emby-Token": server.api_key or "", "Content-Type": "application/json"}
 
 
-def server_request(server, endpoint: str, method: str = "GET", params: Optional[Dict] = None, data: Any = None):
-    """Make a request to a specific server."""
+def _session_cache_key(server) -> tuple:
+    """Stable cache key for a server's HTTP session."""
+    return (
+        server.server_type,
+        server.url.rstrip("/"),
+        getattr(server, "api_key", None) or getattr(server, "token", None),
+    )
+
+
+@lru_cache(maxsize=12)
+def _session_for_key(cache_key: tuple) -> requests.Session:
+    """Create a pooled HTTP session for reuse across requests."""
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_connections=6, pool_maxsize=12)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def server_request(
+    server,
+    endpoint: str,
+    method: str = "GET",
+    params: Optional[Dict] = None,
+    data: Any = None,
+    timeout: float = 20,
+):
+    """Make a request to a specific server using a cached Session for speed."""
     url = f"{server.url.rstrip('/')}{endpoint}"
     try:
-        response = requests.request(
+        session = _session_for_key(_session_cache_key(server))
+        response = session.request(
             method=method,
             url=url,
             headers=get_server_headers(server),
             params=params,
             json=data,
-            timeout=30,
+            timeout=timeout,
         )
         response.raise_for_status()
         return response.json() if response.content else {}

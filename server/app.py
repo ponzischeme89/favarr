@@ -37,7 +37,7 @@ from favarr.services import (
     server_request,
 )
 
-VERSION = '1.1.1'
+VERSION = '1.1.2'
 
 # ANSI color codes for terminal output
 class Colors:
@@ -1154,7 +1154,12 @@ def add_favorite(server_id, user_id, item_id):
                 return jsonify({'message': 'Added to favorites'})
 
         else:  # emby or jellyfin
-            server_request(server, f'/Users/{user_id}/FavoriteItems/{item_id}', method='POST')
+            server_request(
+                server,
+                f'/Users/{user_id}/FavoriteItems/{item_id}',
+                method='POST',
+                timeout=8
+            )
             return jsonify({'message': 'Added to favorites'})
 
     except Exception as e:
@@ -1237,7 +1242,12 @@ def remove_favorite(server_id, user_id, item_id):
                 return jsonify({'message': 'Removed from favorites'})
 
         else:  # emby or jellyfin
-            server_request(server, f'/Users/{user_id}/FavoriteItems/{item_id}', method='DELETE')
+            server_request(
+                server,
+                f'/Users/{user_id}/FavoriteItems/{item_id}',
+                method='DELETE',
+                timeout=8
+            )
             return jsonify({'message': 'Removed from favorites'})
 
     except Exception as e:

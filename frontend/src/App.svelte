@@ -6,7 +6,7 @@
   import UnifiedSearch from './components/UnifiedSearch.svelte';
   import { getServerType, getServerGradient, usesNativeColor } from './serverIcons';
 
-  const appVersion = 'v1.1.1';
+  const appVersion = 'v1.1.2';
   let logoShine = true;
 
   let servers = [];
@@ -37,6 +37,7 @@
   let userSearch = '';
   let usersLoading = false;
   let showUserPicker = false;
+  let showUserDropdown = false;
 
   async function loadServers() {
     loading = true;
@@ -1044,6 +1045,7 @@
     letter-spacing: 0.4px;
     background: linear-gradient(120deg, #c084fc 0%, #8b5cf6 35%, #c084fc 60%, #f9fafb 100%);
     background-size: 220% 100%;
+    background-clip: text;
     -webkit-background-clip: text;
     color: transparent;
     display: inline-block;

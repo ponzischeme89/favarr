@@ -235,7 +235,10 @@
     fabSearchTerm = '';
     fabSearchResults = [];
     setTimeout(() => {
-      document.querySelector('.fab-search-input')?.focus();
+      const el = document.querySelector('.fab-search-input');
+      if (el && typeof el === 'object' && 'focus' in el && typeof el.focus === 'function') {
+        el.focus();
+      }
     }, 100);
   }
 
@@ -2106,6 +2109,7 @@
     color: #fff;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
     text-overflow: ellipsis;
