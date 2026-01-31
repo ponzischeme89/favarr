@@ -1,13 +1,13 @@
 <div align="center">
   <img src="docs/logo_faveswitch.png" alt="FaveSwitch logo" width="60%">
-  <p>A favorites manager <em>(favourites if your American)</em> for <b>Jellyfin, Emby, PleX and Audiobookshelf.</b></p>
+  <p>A favorites manager <em>(favourites if your American)</em> for <b>Jellyfin, Emby, PleX, Stremio and Audiobookshelf.</b></p>
 </div>
 
-FaveSwitch (formally Favarr) is a self-hosted favourites manager for Plex, Jellyfin, Emby, and Audiobookshelf that lets you edit any user's favorites from a single interface. All you need is an admin API key for your media server. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
+FaveSwitch (formally Favarr) is a self-hosted favourites manager for Plex, Jellyfin, Emby, Stremio and Audiobookshelf that lets you edit any user's favorites from a single interface. All you need is an admin API key for your media server. It eliminates the need to log into multiple apps or remote-into family members' devices just to curate their libraries.
 
 ## Features
 - God-mode Access: Switch between any user on your servers to prune or add favorites instantly.
-- Cross-Platform: One interface for your entire media stack (Plex, Jellyfin, Emby, and ABS).
+- Cross-Platform: One interface for your entire media stack (Plex, Jellyfin, Emby, Stremio and ABS).
 - Fix Messy Libraries: Bulk-manage users who "heart" everything or help less tech-savvy users curate their collections.
 - ABS Collections: Basic support for Audiobookshelf user-named collections with tag fallback (e.g. Matt's Favourites)
 - Stats: Total user favourite counts, favourites by media type, and server breakdowns.
@@ -49,6 +49,7 @@ FaveSwitch (formally Favarr) is a self-hosted favourites manager for Plex, Jelly
 | Jellyfin | API key | Standard favourites endpoints |
 | Plex | X-Plex Token | Uses ratings API to flag favourites |
 | Audiobookshelf | JWT token | Creates/updates a per-user favourites collection; falls back to tags if needed |
+| Stremio | Auth Key | Read-only library sync via cloud API (favorites add/remove not yet supported) |
 
 ## Quick Start
 Single image published to GHCR: `ghcr.io/ponzischeme89/faveswitch:latest`

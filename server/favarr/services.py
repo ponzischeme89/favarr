@@ -13,6 +13,9 @@ def get_server_headers(server):
             "Accept": "application/json",
             "Content-Type": "application/json",
         }
+    if server.server_type == "stremio":
+        # Stremio expects authKey in JSON body; only keep JSON content header here.
+        return {"Content-Type": "application/json"}
     if server.server_type == "audiobookshelf":
         return {"Authorization": f'Bearer {server.token or ""}', "Content-Type": "application/json"}
     return {"X-Emby-Token": server.api_key or "", "Content-Type": "application/json"}
@@ -46,6 +49,8 @@ def server_request(
     timeout: float = 20,
 ):
     """Make a request to a specific server using a cached Session for speed."""
+    if server.server_type == "stremio":
+        raise ValueError("server_request is not supported for Stremio; use stremio_request instead")
     url = f"{server.url.rstrip('/')}{endpoint}"
     try:
         session = _session_for_key(_session_cache_key(server))
@@ -355,3 +360,66 @@ def abs_update_collection_items(server, collection_id, item_ids, update_key="lib
     """Update an Audiobookshelf collection with a new item list."""
     payload = {update_key or "libraryItemIds": item_ids}
     return server_request(server, f"/api/collections/{collection_id}", method="PATCH", data=payload)
+
+
+# ---------- Stremio helpers ----------
+
+def _stremio_base(server) -> str:
+    """Ensure the base URL points at the Stremio API root."""
+    base = server.url.rstrip("/")
+    if not base.endswith("/api"):
+        base = f"{base}/api"
+    return base
+
+
+def stremio_request(server, method: str, params: Optional[Dict] = None, timeout: float = 20):
+    """
+    Call a Stremio cloud API method.
+    This uses the documented pattern of POSTing to /api/<method> with a JSON body
+    containing `type` (capitalized method) and `authKey`.
+    """
+    if not server.token:
+        raise Exception("Stremio authKey is required")
+
+    session = _session_for_key(_session_cache_key(server))
+    url = f"{_stremio_base(server)}/{method}"
+    payload: Dict[str, Any] = {"type": method[0].upper() + method[1:]}
+    payload["authKey"] = server.token
+    if params:
+        payload.update(params)
+
+    try:
+        response = session.post(url, json=payload, headers=get_server_headers(server), timeout=timeout)
+        response.raise_for_status()
+        return response.json() if response.content else {}
+    except requests.exceptions.RequestException as exc:
+        raise Exception(f"Stremio API error: {exc}") from exc
+
+
+def stremio_library_items(server) -> List[dict]:
+    """
+    Fetch the user's library items from Stremio using datastoreMeta + datastoreGet.
+    Falls back to addonCollectionGet 'board' entries if datastore fails.
+    """
+    try:
+        meta = stremio_request(server, "datastoreMeta", {"collection": "libraryItem"})
+        ids = []
+        for item in meta.get("items", meta.get("result", meta.get("data", []))):
+            item_id = item.get("id") or item.get("_id")
+            if item_id:
+                ids.append(item_id)
+        if not ids and isinstance(meta, list):
+            ids = [i.get("id") for i in meta if isinstance(i, dict) and i.get("id")]
+        if ids:
+            fetched = stremio_request(server, "datastoreGet", {"collection": "libraryItem", "ids": ids})
+            raw_items = fetched.get("items", fetched.get("result", fetched.get("data", fetched)))
+            if isinstance(raw_items, list):
+                return raw_items
+    except Exception:
+        pass
+
+    try:
+        board = stremio_request(server, "addonCollectionGet", {"update": False})
+        return board.get("board", []) or board.get("items", []) or []
+    except Exception:
+        return []

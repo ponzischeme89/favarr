@@ -35,9 +35,11 @@ from favarr.services import (
     normalize_abs_users,
     plex_item_played,
     server_request,
+    stremio_request,
+    stremio_library_items,
 )
 
-VERSION = '1.1.2'
+VERSION = '1.1.3'
 
 # ANSI color codes for terminal output
 class Colors:
@@ -283,6 +285,8 @@ def get_stats():
                     users = [{'Id': str(a.get('id')), 'Name': a.get('name', 'Unknown')} for a in accounts]
                     if not users:
                         users = [{'Id': '1', 'Name': 'Owner'}]
+                elif server.server_type == 'stremio':
+                    users = [{'Id': 'self', 'Name': 'Stremio'}]
                 elif server.server_type == 'audiobookshelf':
                     users = normalize_abs_users(server_request(server, '/api/users'))
                     users = [{'Id': u.get('id'), 'Name': u.get('username', 'Unknown')} for u in users]
@@ -303,6 +307,12 @@ def get_stats():
                             result = server_request(server, '/library/all', params={'userRating>>': '7'})
                             metadata = result.get('MediaContainer', {}).get('Metadata', [])
                             fav_count = len(metadata)
+                        elif server.server_type == 'stremio':
+                            fav_items = stremio_library_items(server)
+                            fav_count = len(fav_items)
+                            for item in fav_items:
+                                item_type = (item.get('type') or 'Other').title()
+                                stats['favorites']['by_type'][item_type] = stats['favorites']['by_type'].get(item_type, 0) + 1
                         elif server.server_type == 'audiobookshelf':
                             # ABS: look for user's named favorites collection
                             user_name = user.get('Name')
@@ -399,6 +409,8 @@ def collect_stats_task(snapshot_id):
                         users = [{'Id': str(a.get('id')), 'Name': a.get('name', 'Unknown')} for a in accounts]
                         if not users:
                             users = [{'Id': '1', 'Name': 'Owner'}]
+                    elif server.server_type == 'stremio':
+                        users = [{'Id': 'self', 'Name': 'Stremio'}]
                     elif server.server_type == 'audiobookshelf':
                         users = normalize_abs_users(server_request(server, '/api/users'))
                         users = [{'Id': u.get('id'), 'Name': u.get('username', 'Unknown')} for u in users]
@@ -417,6 +429,12 @@ def collect_stats_task(snapshot_id):
                                 result = server_request(server, '/library/all', params={'userRating>>': '7'})
                                 metadata = result.get('MediaContainer', {}).get('Metadata', [])
                                 fav_count = len(metadata)
+                            elif server.server_type == 'stremio':
+                                fav_items = stremio_library_items(server)
+                                fav_count = len(fav_items)
+                                for item in fav_items:
+                                    item_type = (item.get('type') or 'Other').title()
+                                    stats['favorites']['by_type'][item_type] = stats['favorites']['by_type'].get(item_type, 0) + 1
                             elif server.server_type == 'audiobookshelf':
                                 user_name = user.get('Name')
                                 collections = normalize_abs_collections(server_request(server, '/api/collections'))
@@ -667,6 +685,14 @@ def get_server_info_internal(server):
             'Version': info.get('MediaContainer', {}).get('version', ''),
             'ServerType': 'plex'
         }
+    elif server.server_type == 'stremio':
+        info = stremio_request(server, 'addonCollectionGet', {'update': False})
+        addons = info.get('addons', info.get('result', [])) or []
+        return {
+            'ServerName': 'Stremio',
+            'Version': f'{len(addons)} addons',
+            'ServerType': 'stremio'
+        }
     elif server.server_type == 'audiobookshelf':
         # Use /api/libraries to verify API key works (authenticated endpoint)
         libs = server_request(server, '/api/libraries')
@@ -720,6 +746,8 @@ def get_users(server_id):
             if not users:
                 users = [{'Id': '1', 'Name': 'Owner'}]
             return jsonify(users)
+        elif server.server_type == 'stremio':
+            return jsonify([{'Id': 'self', 'Name': 'Stremio'}])
         elif server.server_type == 'audiobookshelf':
             users = normalize_abs_users(server_request(server, '/api/users'))
             return jsonify([{'Id': u.get('id'), 'Name': u.get('username', 'Unknown')} for u in users])
@@ -896,6 +924,12 @@ def get_libraries(server_id):
                 'CollectionType': s.get('type', '')
             } for s in sections]
             return jsonify(libraries)
+        elif server.server_type == 'stremio':
+            return jsonify([{
+                'ItemId': 'stremio-lib',
+                'Name': 'Stremio Library',
+                'CollectionType': 'mixed'
+            }])
         elif server.server_type == 'audiobookshelf':
             result = server_request(server, '/api/libraries')
             libraries = result.get('libraries', [])
@@ -963,6 +997,27 @@ def get_items(server_id):
             if search:
                 log_service('Search', f'Found {len(items)} results for "{search}" on plex')
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
+
+        elif server.server_type == 'stremio':
+            st_items = stremio_library_items(server)
+            mapped = []
+            for raw in st_items:
+                name = raw.get('name') or raw.get('title') or 'Unknown'
+                item_type = raw.get('type') or raw.get('meta', {}).get('type') or 'Other'
+                if search and search.lower() not in name.lower():
+                    continue
+                poster = raw.get('poster') or raw.get('thumbnail') or raw.get('background')
+                mapped.append({
+                    'Id': raw.get('_id') or raw.get('id') or raw.get('guid') or name,
+                    'Name': name,
+                    'Type': item_type.title(),
+                    'ProductionYear': raw.get('year') or raw.get('releaseInfo'),
+                    'Overview': raw.get('overview') or raw.get('description') or '',
+                    'ImageTags': {'Primary': poster} if poster else {},
+                    'UserData': {'Played': bool(raw.get('state') == 'completed' or raw.get('progress'))}
+                })
+            limited = mapped[:limit]
+            return jsonify({'Items': limited, 'TotalRecordCount': len(limited)})
 
         elif server.server_type == 'audiobookshelf':
             libs = server_request(server, '/api/libraries').get('libraries', [])
@@ -1077,6 +1132,23 @@ def get_favorites(server_id, user_id):
             } for item in metadata]
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
+        elif server.server_type == 'stremio':
+            items = stremio_library_items(server)
+            mapped = []
+            for raw in items:
+                name = raw.get('name') or raw.get('title') or 'Unknown'
+                poster = raw.get('poster') or raw.get('thumbnail') or raw.get('background')
+                mapped.append({
+                    'Id': raw.get('_id') or raw.get('id') or raw.get('guid') or name,
+                    'Name': name,
+                    'Type': (raw.get('type') or 'Other').title(),
+                    'ProductionYear': raw.get('year') or raw.get('releaseInfo'),
+                    'Overview': raw.get('overview') or raw.get('description') or '',
+                    'ImageTags': {'Primary': poster} if poster else {},
+                    'UserData': {'Played': bool(raw.get('state') == 'completed' or raw.get('progress'))}
+                })
+            return jsonify({'Items': mapped, 'TotalRecordCount': len(mapped)})
+
         elif server.server_type == 'audiobookshelf':
             # Use favorites collection per user (fallback to tag-based if needed)
             try:
@@ -1124,6 +1196,9 @@ def add_favorite(server_id, user_id, item_id):
             server_request(server, '/:/rate', method='PUT',
                           params={'key': item_id, 'identifier': 'com.plexapp.plugins.library', 'rating': 10})
             return jsonify({'message': 'Added to favorites'})
+
+        elif server.server_type == 'stremio':
+            return jsonify({'error': 'Adding favorites is not yet supported for Stremio integrations'}), 400
 
         elif server.server_type == 'audiobookshelf':
             # Add item to user's favorites collection (fallback to tag-based if needed)
@@ -1214,6 +1289,9 @@ def remove_favorite(server_id, user_id, item_id):
                           params={'key': item_id, 'identifier': 'com.plexapp.plugins.library', 'rating': -1})
             return jsonify({'message': 'Removed from favorites'})
 
+        elif server.server_type == 'stremio':
+            return jsonify({'error': 'Removing favorites is not yet supported for Stremio integrations'}), 400
+
         elif server.server_type == 'audiobookshelf':
             # Remove item from user's favorites collection (fallback to tag-based if needed)
             try:
@@ -1290,6 +1368,27 @@ def get_recent(server_id):
             } for item in metadata]
             return jsonify({'Items': items, 'TotalRecordCount': len(items)})
 
+        elif server.server_type == 'stremio':
+            items = stremio_library_items(server)
+            # Sort by modified/created timestamps if present
+            items = sorted(
+                items,
+                key=lambda i: i.get('modified') or i.get('lastWatched') or i.get('ts') or 0,
+                reverse=True
+            )
+            mapped = []
+            for raw in items[:limit]:
+                poster = raw.get('poster') or raw.get('thumbnail') or raw.get('background')
+                mapped.append({
+                    'Id': raw.get('_id') or raw.get('id') or raw.get('guid') or raw.get('name'),
+                    'Name': raw.get('name') or raw.get('title', 'Unknown'),
+                    'Type': (raw.get('type') or 'Other').title(),
+                    'ProductionYear': raw.get('year') or raw.get('releaseInfo'),
+                    'ImageTags': {'Primary': poster} if poster else {},
+                    'UserData': {'Played': bool(raw.get('progress'))}
+                })
+            return jsonify({'Items': mapped, 'TotalRecordCount': len(mapped)})
+
         elif server.server_type == 'audiobookshelf':
             libs = server_request(server, '/api/libraries').get('libraries', [])
             if parent_id:
@@ -1343,6 +1442,14 @@ def get_image(server_id, item_id):
         elif server.server_type == 'audiobookshelf':
             url = f"{server.url.rstrip('/')}/api/items/{item_id}/cover"
             params = {'width': max_width}
+
+        elif server.server_type == 'stremio':
+            thumb_path = request.args.get('thumb', '')
+            if thumb_path and thumb_path.startswith('http'):
+                url = thumb_path
+                params = {}
+            else:
+                return jsonify({'error': 'Image not available for this item'}), 404
 
         else:  # emby or jellyfin
             url = f"{server.url.rstrip('/')}/Items/{item_id}/Images/{image_type}"
