@@ -33,7 +33,7 @@
   let selectedIds = new Set();
 
   // View mode: 'list' or 'card'
-  let viewMode = 'list';
+  let viewMode = 'card';
 
   // FAB state - now with modes: closed, menu, search, add
   let fabMode = 'closed'; // closed | menu | search | bulk
@@ -602,6 +602,13 @@
     </div>
   {/if}
 {:else}
+  <div class="page-header">
+    <div>
+      <h2 class="page-title">Favorites</h2>
+      <p class="page-subtitle">Manage favorite media across your library</p>
+    </div>
+  </div>
+
   {#if error || isAudiobookshelf || showSearch}
     <div class="card">
       {#if error}
@@ -1218,6 +1225,28 @@
 {/if}
 
 <style>
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--text-tertiary);
+    margin: 0;
+  }
+
   /* Master-Detail Layout */
   .master-detail-container {
     display: grid;

@@ -3,10 +3,11 @@
   import ServerManager from './components/ServerManager.svelte';
   import FavoritesManager from './components/FavoritesManager.svelte';
   import Settings from './components/Settings.svelte';
+  import Stats from './components/Stats.svelte';
   import UnifiedSearch from './components/UnifiedSearch.svelte';
   import { getServerType, getServerGradient, usesNativeColor } from './serverIcons';
 
-  const appVersion = 'v1.1.3';
+  const appVersion = 'v1.1.4';
   let logoShine = true;
 
   let servers = [];
@@ -439,6 +440,18 @@
           </button>
           <button
             class="nav-item"
+            class:active={currentView === 'stats'}
+            on:click={() => goToView('stats')}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
+            </svg>
+            Stats
+          </button>
+          <button
+            class="nav-item"
             class:active={currentView === 'settings'}
             on:click={() => goToView('settings')}
             disabled={!selectedServer}
@@ -609,7 +622,11 @@
       </div>
     </header>
 
-    {#if !selectedServer}
+    {#if currentView === 'stats'}
+      <div class="content-area">
+        <Stats />
+      </div>
+    {:else if !selectedServer}
       {#if servers.length === 0}
         <!-- No Servers Added State -->
         <div class="no-servers-state">
@@ -1179,7 +1196,7 @@
 
   .content-area {
     flex: 1;
-    padding: 24px;
+    padding: 25pt;
     overflow-y: auto;
   }
 

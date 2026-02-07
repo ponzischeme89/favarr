@@ -11,7 +11,7 @@ import json
 import platform
 
 from favarr.extensions import db
-from favarr.models import AppSettings, Server, StatsSnapshot
+from favarr.models import AppSettings, Server, StatsSnapshot, EmbyLayoutTemplate
 from favarr.services import (
     abs_add_item_to_collection,
     abs_collection_id,
@@ -38,8 +38,13 @@ from favarr.services import (
     stremio_request,
     stremio_library_items,
 )
+from integrations.emby.layouts import (
+    apply_layout_template as emby_apply_layout_template,
+    get_users as emby_layout_get_users,
+    load_all_layouts as emby_load_all_layouts,
+)
 
-VERSION = '1.1.3'
+VERSION = '1.1.4'
 
 # ANSI color codes for terminal output
 class Colors:
@@ -358,6 +363,32 @@ def get_stats():
             })
 
         return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/stats/quick', methods=['GET'])
+def get_quick_stats():
+    """Fast stats from local DB only – no external API calls."""
+    try:
+        servers = Server.query.filter_by(enabled=True).all()
+        servers_by_type = {}
+        for s in servers:
+            servers_by_type[s.server_type] = servers_by_type.get(s.server_type, 0) + 1
+
+        snapshot = (StatsSnapshot.query
+                    .filter_by(collection_status='completed')
+                    .order_by(StatsSnapshot.created_at.desc())
+                    .first())
+
+        result = {
+            'servers': {
+                'total': len(servers),
+                'by_type': servers_by_type
+            },
+            'snapshot': snapshot.to_dict() if snapshot else None
+        }
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -756,6 +787,146 @@ def get_users(server_id):
             return jsonify(users)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# ============ Emby Layouts ============
+
+def _ensure_emby_layout_server(server):
+    if not server:
+        return jsonify({'error': 'Server not found'}), 404
+    if server.server_type not in ('emby', 'jellyfin'):
+        return jsonify({'error': 'Layouts are only supported for Emby/Jellyfin servers'}), 400
+    if not server.api_key:
+        return jsonify({'error': 'Missing API key for Emby server'}), 400
+    return None
+
+
+@app.route('/api/emby/<int:server_id>/layouts/users', methods=['GET'])
+def emby_layout_users(server_id):
+    """Get Emby users for layout management."""
+    server = get_server_or_404(server_id)
+    error = _ensure_emby_layout_server(server)
+    if error:
+        return error
+    try:
+        return jsonify(emby_layout_get_users(server))
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/emby/<int:server_id>/layouts/<user_id>', methods=['GET'])
+def emby_user_layouts(server_id, user_id):
+    """Get all known Emby display preference layouts for a user."""
+    server = get_server_or_404(server_id)
+    error = _ensure_emby_layout_server(server)
+    if error:
+        return error
+    client = request.args.get('client') or request.args.get('Client')
+    device_id = (
+        request.args.get('deviceId')
+        or request.args.get('device_id')
+        or request.args.get('DeviceId')
+        or request.args.get('DeviceID')
+    )
+    try:
+        payload = emby_load_all_layouts(server, user_id, client=client, device_id=device_id)
+        return jsonify(payload)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/emby/<int:server_id>/layouts/<user_id>/apply', methods=['POST'])
+def emby_apply_layout(server_id, user_id):
+    """Apply a layout template to an Emby user."""
+    server = get_server_or_404(server_id)
+    error = _ensure_emby_layout_server(server)
+    if error:
+        return error
+
+    data = request.get_json() or {}
+    template = data.get('template') or data.get('layout') or data.get('json_blob')
+    if template is None:
+        template = data
+
+    client = (
+        request.args.get('client')
+        or request.args.get('Client')
+        or data.get('client')
+        or data.get('Client')
+    )
+    device_id = (
+        request.args.get('deviceId')
+        or request.args.get('device_id')
+        or request.args.get('DeviceId')
+        or request.args.get('DeviceID')
+        or data.get('deviceId')
+        or data.get('device_id')
+        or data.get('DeviceId')
+        or data.get('DeviceID')
+    )
+
+    if isinstance(template, str):
+        try:
+            template = json.loads(template)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Template JSON is invalid'}), 400
+
+    try:
+        result = emby_apply_layout_template(server, user_id, template, client=client, device_id=device_id)
+        return jsonify(result)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/emby/layouts/template', methods=['POST'])
+def create_emby_layout_template():
+    """Create a new Emby layout template."""
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'Template name is required'}), 400
+    description = (data.get('description') or '').strip()
+    payload = data.get('json_blob') or data.get('layout') or data.get('template')
+    if payload is None:
+        return jsonify({'error': 'Template JSON is required'}), 400
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except json.JSONDecodeError:
+            return jsonify({'error': 'Template JSON is invalid'}), 400
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'Template JSON must be an object'}), 400
+
+    template = EmbyLayoutTemplate(
+        name=name,
+        description=description,
+        json_blob=json.dumps(payload),
+    )
+    db.session.add(template)
+    db.session.commit()
+    return jsonify(template.to_dict()), 201
+
+
+@app.route('/api/emby/layouts/templates', methods=['GET'])
+def list_emby_layout_templates():
+    """List Emby layout templates."""
+    templates = EmbyLayoutTemplate.query.order_by(EmbyLayoutTemplate.created_at.desc()).all()
+    return jsonify([t.to_dict() for t in templates])
+
+
+@app.route('/api/emby/layouts/template/<int:template_id>', methods=['DELETE'])
+def delete_emby_layout_template(template_id):
+    """Delete an Emby layout template."""
+    template = EmbyLayoutTemplate.query.get(template_id)
+    if not template:
+        return jsonify({'error': 'Template not found'}), 404
+    db.session.delete(template)
+    db.session.commit()
+    return jsonify({'message': 'Template deleted'})
 
 
 # ============ Audiobookshelf Collections ============

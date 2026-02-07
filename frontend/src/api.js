@@ -42,6 +42,7 @@ export const api = {
   health: () => fetchJson('/health'),
   getLogs: (limit = 200) => fetchJson(`/logs?limit=${limit}`),
   getStats: () => fetchJson('/stats'),
+  getQuickStats: () => fetchJson('/stats/quick'),
 
   // Server Management (CRUD)
   getServers: () => fetchJson('/servers'),
@@ -142,5 +143,29 @@ export const api = {
 
   getCollectionStatus: () => fetchJson('/stats/collect/status'),
 
-  getSnapshots: (limit = 30) => fetchJson(`/stats/snapshots?limit=${limit}`)
+  getSnapshots: (limit = 30) => fetchJson(`/stats/snapshots?limit=${limit}`),
+
+  // Emby Home-Screen Layouts
+  getEmbyLayoutUsers: (serverId) => fetchJson(`/emby/${serverId}/layouts/users`),
+
+  getEmbyLayouts: (serverId, userId, params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchJson(`/emby/${serverId}/layouts/${userId}${query ? `?${query}` : ''}`);
+  },
+
+  applyEmbyLayout: (serverId, userId, payload) => fetchJson(`/emby/${serverId}/layouts/${userId}/apply`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+
+  createEmbyLayoutTemplate: (payload) => fetchJson('/emby/layouts/template', {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  }),
+
+  getEmbyLayoutTemplates: () => fetchJson('/emby/layouts/templates'),
+
+  deleteEmbyLayoutTemplate: (templateId) => fetchJson(`/emby/layouts/template/${templateId}`, {
+    method: 'DELETE'
+  })
 };

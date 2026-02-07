@@ -87,3 +87,29 @@ class StatsSnapshot(db.Model):
             "collection_message": self.collection_message,
             "duration_seconds": self.duration_seconds,
         }
+
+
+class EmbyLayoutTemplate(db.Model):
+    """Template storage for Emby home-screen layouts."""
+
+    __tablename__ = "emby_layout_templates"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    json_blob = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+    def to_dict(self, include_json=True):
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+        if include_json:
+            try:
+                data["json_blob"] = json.loads(self.json_blob) if self.json_blob else {}
+            except json.JSONDecodeError:
+                data["json_blob"] = {}
+        return data
